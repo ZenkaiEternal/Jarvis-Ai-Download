@@ -16,6 +16,7 @@ import com.example.data.repository.JarvisRepository
 import com.example.domain.ai.JarvisBrain
 import com.example.domain.security.ConfirmationRequest
 import com.example.domain.security.SecurityEngine
+import com.example.domain.service.JarvisBackgroundService
 import com.example.domain.tools.JarvisTool
 import com.example.domain.tools.WeatherTool
 import com.example.domain.voice.VoiceEngine
@@ -88,16 +89,37 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         onSpeechRecognized = { text ->
             onSpeechReceived(text)
         },
-        onWakeWordDetected = {
-            onWakeWordDetected()
+        onWakeWordDetected = { remainder ->
+            onWakeWordDetected(remainder)
         }
     )
 
-    private fun onWakeWordDetected() {
+    val isBackgroundSentinelRunning: StateFlow<Boolean> = JarvisBackgroundService.isServiceRunning
+    val backgroundStatusText: StateFlow<String> = JarvisBackgroundService.lastStatusText
+    val isSystemSttAvailable: StateFlow<Boolean> = voiceEngine.isSystemSttAvailable
+
+    private fun onWakeWordDetected(remainder: String) {
         viewModelScope.launch {
             if (!_isMuted.value) {
-                voiceEngine.speak("At your command, sir.")
+                if (remainder.isBlank()) {
+                    voiceEngine.speak("At your command, sir.")
+                } else {
+                    voiceEngine.speak("Yes, sir.")
+                    sendUserMessage(remainder)
+                }
+            } else if (remainder.isNotBlank()) {
+                sendUserMessage(remainder)
             }
+        }
+    }
+
+    fun toggleBackgroundSentinel() {
+        val app = getApplication<Application>()
+        if (isBackgroundSentinelRunning.value) {
+            JarvisBackgroundService.stop(app)
+        } else {
+            voiceEngine.stopListening()
+            JarvisBackgroundService.start(app)
         }
     }
 

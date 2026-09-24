@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -81,6 +82,9 @@ fun HudCoreTab(
     onSendMessage: (String) -> Unit,
     onSpeakMessage: (String) -> Unit,
     onOpenDocScanner: () -> Unit,
+    isSentinelActive: Boolean = false,
+    onToggleSentinel: () -> Unit = {},
+    sentinelStatus: String = "STANDBY",
     modifier: Modifier = Modifier
 ) {
     var inputText by remember { mutableStateOf("") }
@@ -144,6 +148,74 @@ fun HudCoreTab(
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp
                 )
+            }
+        }
+
+        // Background Sentinel Protocol Quick HUD Bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 2.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (isSentinelActive) JarvisGreen.copy(alpha = 0.12f) else JarvisSurfaceVariant)
+                .border(
+                    1.dp,
+                    if (isSentinelActive) JarvisGreen.copy(alpha = 0.6f) else JarvisCyan.copy(alpha = 0.25f),
+                    RoundedCornerShape(8.dp)
+                )
+                .clickable(onClick = onToggleSentinel)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .testTag("sentinel_mode_banner")
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = null,
+                        tint = if (isSentinelActive) JarvisGreen else JarvisCyan,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = if (isSentinelActive) "BACKGROUND SENTINEL: ACTIVE" else "BACKGROUND SENTINEL: DISENGAGED",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSentinelActive) JarvisGreen else JarvisCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                        Text(
+                            text = if (isSentinelActive) "Autonomous sentinel active (no Google Play Services needed). Say 'Jarvis'." else "Tap to enable always-on background wake-word (autonomous / no GMS).",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = JarvisTextSecondary,
+                            fontSize = 9.sp
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (isSentinelActive) JarvisRedAlert.copy(alpha = 0.2f) else JarvisCyan.copy(alpha = 0.2f))
+                        .border(
+                            1.dp,
+                            if (isSentinelActive) JarvisRedAlert else JarvisCyan,
+                            RoundedCornerShape(6.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (isSentinelActive) "STOP" else "ACTIVATE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSentinelActive) JarvisRedAlert else JarvisCyan,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 9.sp
+                    )
+                }
             }
         }
 

@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +45,9 @@ fun JarvisMainScreen(
     val confirmationRequest by viewModel.currentConfirmation.collectAsStateWithLifecycle()
     val isDocScannerOpen by viewModel.isDocScannerOpen.collectAsStateWithLifecycle()
 
+    val isSentinelActive by viewModel.isBackgroundSentinelRunning.collectAsStateWithLifecycle()
+    val sentinelStatus by viewModel.backgroundStatusText.collectAsStateWithLifecycle()
+
     val memories by viewModel.memories.collectAsStateWithLifecycle()
     val notes by viewModel.notes.collectAsStateWithLifecycle()
     val reminders by viewModel.reminders.collectAsStateWithLifecycle()
@@ -57,6 +60,13 @@ fun JarvisMainScreen(
         if (isGranted) {
             viewModel.toggleVoiceListening()
         }
+    }
+
+    // Notification permission launcher (Android 13+)
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        viewModel.toggleBackgroundSentinel()
     }
 
     val handleVoiceToggle = {
@@ -72,6 +82,29 @@ fun JarvisMainScreen(
         }
     }
 
+    val handleToggleSentinel = {
+        val hasMic = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasMic) {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val hasNotif = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!hasNotif) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                viewModel.toggleBackgroundSentinel()
+            }
+        } else {
+            viewModel.toggleBackgroundSentinel()
+        }
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -84,7 +117,9 @@ fun JarvisMainScreen(
                 HudTelemetryHeader(
                     voiceState = voiceState,
                     isMuted = isMuted,
-                    onToggleMute = { viewModel.toggleMute() }
+                    onToggleMute = { viewModel.toggleMute() },
+                    isSentinelActive = isSentinelActive,
+                    onToggleSentinel = handleToggleSentinel
                 )
             },
             bottomBar = {
@@ -126,6 +161,9 @@ fun JarvisMainScreen(
                             notes = notes,
                             reminders = reminders,
                             auditLogs = auditLogs,
+                            isSentinelActive = isSentinelActive,
+                            sentinelStatus = sentinelStatus,
+                            onToggleSentinel = handleToggleSentinel,
                             onToggleVoice = handleVoiceToggle,
                             onSendMessage = { viewModel.sendUserMessage(it) },
                             onSpeakMessage = { viewModel.speak(it) },
@@ -156,6 +194,9 @@ fun JarvisMainScreen(
                         notes = notes,
                         reminders = reminders,
                         auditLogs = auditLogs,
+                        isSentinelActive = isSentinelActive,
+                        sentinelStatus = sentinelStatus,
+                        onToggleSentinel = handleToggleSentinel,
                         onToggleVoice = handleVoiceToggle,
                         onSendMessage = { viewModel.sendUserMessage(it) },
                         onSpeakMessage = { viewModel.speak(it) },
@@ -199,6 +240,9 @@ private fun TabContent(
     notes: List<com.example.data.model.NoteEntity>,
     reminders: List<com.example.data.model.ReminderEntity>,
     auditLogs: List<com.example.data.model.AuditLogEntity>,
+    isSentinelActive: Boolean,
+    sentinelStatus: String,
+    onToggleSentinel: () -> Unit,
     onToggleVoice: () -> Unit,
     onSendMessage: (String) -> Unit,
     onSpeakMessage: (String) -> Unit,
@@ -221,7 +265,10 @@ private fun TabContent(
                 onToggleVoice = onToggleVoice,
                 onSendMessage = onSendMessage,
                 onSpeakMessage = onSpeakMessage,
-                onOpenDocScanner = onOpenDocScanner
+                onOpenDocScanner = onOpenDocScanner,
+                isSentinelActive = isSentinelActive,
+                onToggleSentinel = onToggleSentinel,
+                sentinelStatus = sentinelStatus
             )
             1 -> TacticalToolsTab(
                 onExecuteAction = onSendMessage,

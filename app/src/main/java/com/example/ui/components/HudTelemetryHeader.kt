@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +20,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +61,8 @@ fun HudTelemetryHeader(
     voiceState: JarvisVoiceState,
     isMuted: Boolean,
     onToggleMute: () -> Unit,
+    isSentinelActive: Boolean = false,
+    onToggleSentinel: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var currentTime by remember { mutableStateOf("") }
@@ -97,7 +102,7 @@ fun HudTelemetryHeader(
             .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
             .background(JarvisSurface.copy(alpha = 0.95f))
             .border(1.dp, JarvisCyan.copy(alpha = 0.35f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -135,15 +140,49 @@ fun HudTelemetryHeader(
                 )
             }
 
-            // Right: Status badge & Audio Mute toggle
+            // Right: Background Sentinel Button & Status badge & Audio Mute toggle
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Background Sentinel Toggle Pill
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSentinelActive) JarvisGreen.copy(alpha = 0.18f) else JarvisSurfaceVariant)
+                        .border(
+                            1.dp,
+                            if (isSentinelActive) JarvisGreen else JarvisCyan.copy(alpha = 0.35f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable(onClick = onToggleSentinel)
+                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                        .testTag("toggle_sentinel_header_button")
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = "Background Sentinel",
+                            tint = if (isSentinelActive) JarvisGreen else JarvisTextSecondary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isSentinelActive) "SENTINEL: ON" else "SENTINEL: OFF",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSentinelActive) JarvisGreen else JarvisTextSecondary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
                 // Status Pill
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(JarvisSurfaceVariant)
                         .border(1.dp, stateBadgeColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 8.dp, vertical = 5.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -158,25 +197,25 @@ fun HudTelemetryHeader(
                             style = MaterialTheme.typography.labelSmall,
                             color = stateBadgeColor,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp
+                            fontSize = 9.sp
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
 
                 // Mute / Voice output toggle
                 IconButton(
                     onClick = onToggleMute,
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(34.dp)
                         .testTag("audio_mute_toggle")
                 ) {
                     Icon(
                         imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                         contentDescription = if (isMuted) "Audio Muted" else "Audio Enabled",
                         tint = if (isMuted) JarvisRedAlert else JarvisCyan,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

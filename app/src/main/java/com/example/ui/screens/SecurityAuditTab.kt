@@ -102,6 +102,11 @@ fun SecurityAuditTab(
                 subtitle = "Command injection detection and size boundary validation enabled on all inputs.",
                 isSecure = true
             )
+            SecurityProtocolItem(
+                title = "GMS-Independent Architecture",
+                subtitle = "Zero Google Play Services dependency. Pure native AudioRecord HAL & direct REST API.",
+                isSecure = true
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
