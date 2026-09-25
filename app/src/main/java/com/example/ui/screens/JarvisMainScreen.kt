@@ -28,12 +28,14 @@ import com.example.ui.components.DocumentAnalysisDialog
 import com.example.ui.components.HudConfirmationDialog
 import com.example.ui.components.HudNavigationBar
 import com.example.ui.components.HudTelemetryHeader
+import com.example.ui.components.VeronicaSystemDialog
 import com.example.ui.theme.JarvisBackground
 import com.example.ui.viewmodel.JarvisViewModel
 
 @Composable
 fun JarvisMainScreen(
     viewModel: JarvisViewModel,
+    onLaunchSystemVoiceDialog: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -47,6 +49,13 @@ fun JarvisMainScreen(
 
     val isSentinelActive by viewModel.isBackgroundSentinelRunning.collectAsStateWithLifecycle()
     val sentinelStatus by viewModel.backgroundStatusText.collectAsStateWithLifecycle()
+    val isDeviceOnline by viewModel.isDeviceOnline.collectAsStateWithLifecycle()
+    val antiVirusReport by viewModel.antiVirusReport.collectAsStateWithLifecycle()
+    val isScanningAntiVirus by viewModel.isScanningAntiVirus.collectAsStateWithLifecycle()
+
+    val liveSpeechTranscript by viewModel.liveSpeechTranscript.collectAsStateWithLifecycle()
+    val veronicaStatus by viewModel.veronicaStatus.collectAsStateWithLifecycle()
+    val isVeronicaModalOpen by viewModel.isVeronicaModalOpen.collectAsStateWithLifecycle()
 
     val memories by viewModel.memories.collectAsStateWithLifecycle()
     val notes by viewModel.notes.collectAsStateWithLifecycle()
@@ -119,7 +128,10 @@ fun JarvisMainScreen(
                     isMuted = isMuted,
                     onToggleMute = { viewModel.toggleMute() },
                     isSentinelActive = isSentinelActive,
-                    onToggleSentinel = handleToggleSentinel
+                    onToggleSentinel = handleToggleSentinel,
+                    isDeviceOnline = isDeviceOnline,
+                    isVeronicaActive = veronicaStatus.isActive,
+                    onOpenVeronica = { viewModel.setVeronicaModalOpen(true) }
                 )
             },
             bottomBar = {
@@ -163,6 +175,13 @@ fun JarvisMainScreen(
                             auditLogs = auditLogs,
                             isSentinelActive = isSentinelActive,
                             sentinelStatus = sentinelStatus,
+                            isDeviceOnline = isDeviceOnline,
+                            liveSpeechTranscript = liveSpeechTranscript,
+                            onOpenVeronica = { viewModel.setVeronicaModalOpen(true) },
+                            onLaunchSystemVoiceDialog = onLaunchSystemVoiceDialog,
+                            antiVirusReport = antiVirusReport,
+                            isScanningAntiVirus = isScanningAntiVirus,
+                            onRunAntiVirusScan = { viewModel.runAntiVirusScan() },
                             onToggleSentinel = handleToggleSentinel,
                             onToggleVoice = handleVoiceToggle,
                             onSendMessage = { viewModel.sendUserMessage(it) },
@@ -196,6 +215,13 @@ fun JarvisMainScreen(
                         auditLogs = auditLogs,
                         isSentinelActive = isSentinelActive,
                         sentinelStatus = sentinelStatus,
+                        isDeviceOnline = isDeviceOnline,
+                        liveSpeechTranscript = liveSpeechTranscript,
+                        onOpenVeronica = { viewModel.setVeronicaModalOpen(true) },
+                        onLaunchSystemVoiceDialog = onLaunchSystemVoiceDialog,
+                        antiVirusReport = antiVirusReport,
+                        isScanningAntiVirus = isScanningAntiVirus,
+                        onRunAntiVirusScan = { viewModel.runAntiVirusScan() },
                         onToggleSentinel = handleToggleSentinel,
                         onToggleVoice = handleVoiceToggle,
                         onSendMessage = { viewModel.sendUserMessage(it) },
@@ -227,6 +253,18 @@ fun JarvisMainScreen(
             onDismiss = { viewModel.setDocScannerOpen(false) },
             onAnalyze = { text -> viewModel.analyzeDocument(text) }
         )
+
+        // Veronica Protocol / Hulkbuster System Dialog
+        VeronicaSystemDialog(
+            isOpen = isVeronicaModalOpen,
+            status = veronicaStatus,
+            onDismiss = { viewModel.setVeronicaModalOpen(false) },
+            onVerifyCode = { code -> viewModel.activateVeronicaWithCode(code) },
+            onDeployCage = { viewModel.deployVeronicaCage() },
+            onRepairArmor = { viewModel.repairVeronicaArmor() },
+            onHeavyStrike = { viewModel.veronicaHeavyStrike() },
+            onDeactivate = { viewModel.deactivateVeronica() }
+        )
     }
 }
 
@@ -242,6 +280,13 @@ private fun TabContent(
     auditLogs: List<com.example.data.model.AuditLogEntity>,
     isSentinelActive: Boolean,
     sentinelStatus: String,
+    isDeviceOnline: Boolean = false,
+    liveSpeechTranscript: String = "",
+    onOpenVeronica: () -> Unit = {},
+    onLaunchSystemVoiceDialog: () -> Unit = {},
+    antiVirusReport: com.example.domain.security.AntiVirusScanReport? = null,
+    isScanningAntiVirus: Boolean = false,
+    onRunAntiVirusScan: () -> Unit = {},
     onToggleSentinel: () -> Unit,
     onToggleVoice: () -> Unit,
     onSendMessage: (String) -> Unit,
@@ -262,13 +307,17 @@ private fun TabContent(
                 voiceState = voiceState,
                 amplitude = amplitude,
                 messages = messages,
+                liveSpeechTranscript = liveSpeechTranscript,
                 onToggleVoice = onToggleVoice,
                 onSendMessage = onSendMessage,
                 onSpeakMessage = onSpeakMessage,
                 onOpenDocScanner = onOpenDocScanner,
+                onOpenVeronica = onOpenVeronica,
+                onLaunchSystemVoiceDialog = onLaunchSystemVoiceDialog,
                 isSentinelActive = isSentinelActive,
                 onToggleSentinel = onToggleSentinel,
-                sentinelStatus = sentinelStatus
+                sentinelStatus = sentinelStatus,
+                isDeviceOnline = isDeviceOnline
             )
             1 -> TacticalToolsTab(
                 onExecuteAction = onSendMessage,
@@ -290,7 +339,10 @@ private fun TabContent(
                 onDeleteReminder = onDeleteReminder
             )
             4 -> SecurityAuditTab(
-                auditLogs = auditLogs
+                auditLogs = auditLogs,
+                antiVirusReport = antiVirusReport,
+                isScanning = isScanningAntiVirus,
+                onRunScan = onRunAntiVirusScan
             )
         }
     }

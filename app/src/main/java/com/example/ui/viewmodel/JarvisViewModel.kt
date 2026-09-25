@@ -1,6 +1,11 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.api.GeminiClient
@@ -14,6 +19,7 @@ import com.example.data.model.NoteEntity
 import com.example.data.model.ReminderEntity
 import com.example.data.repository.JarvisRepository
 import com.example.domain.ai.JarvisBrain
+import com.example.domain.security.AntiVirusScanReport
 import com.example.domain.security.ConfirmationRequest
 import com.example.domain.security.SecurityEngine
 import com.example.domain.service.JarvisBackgroundService
@@ -50,6 +56,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 
+    private val _isDeviceOnline = MutableStateFlow(false)
+    val isDeviceOnline: StateFlow<Boolean> = _isDeviceOnline.asStateFlow()
+
     private val _currentConfirmation = MutableStateFlow<ConfirmationRequest?>(null)
     val currentConfirmation: StateFlow<ConfirmationRequest?> = _currentConfirmation.asStateFlow()
 
@@ -58,6 +67,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _isDocScannerOpen = MutableStateFlow(false)
     val isDocScannerOpen: StateFlow<Boolean> = _isDocScannerOpen.asStateFlow()
+
+    private val _antiVirusReport = MutableStateFlow<AntiVirusScanReport?>(null)
+    val antiVirusReport: StateFlow<AntiVirusScanReport?> = _antiVirusReport.asStateFlow()
+
+    private val _isScanningAntiVirus = MutableStateFlow(false)
+    val isScanningAntiVirus: StateFlow<Boolean> = _isScanningAntiVirus.asStateFlow()
 
     val memories = repository.memories.stateIn(
         scope = viewModelScope,
@@ -94,6 +109,40 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
     )
 
+    val liveSpeechTranscript: StateFlow<String> = voiceEngine.liveSpeechTranscript
+    val veronicaStatus = brain.veronicaEngine.status
+
+    private val _isVeronicaModalOpen = MutableStateFlow(false)
+    val isVeronicaModalOpen: StateFlow<Boolean> = _isVeronicaModalOpen.asStateFlow()
+
+    fun setVeronicaModalOpen(open: Boolean) {
+        _isVeronicaModalOpen.value = open
+    }
+
+    fun activateVeronicaWithCode(code: String): Boolean {
+        val success = brain.veronicaEngine.verifyAndActivate(code)
+        if (success) {
+            sendUserMessage("activate veronica code $code")
+        }
+        return success
+    }
+
+    fun deployVeronicaCage() {
+        sendUserMessage("deploy orbital cage")
+    }
+
+    fun repairVeronicaArmor() {
+        sendUserMessage("repair hulkbuster armor")
+    }
+
+    fun veronicaHeavyStrike() {
+        sendUserMessage("hulkbuster heavy strike")
+    }
+
+    fun deactivateVeronica() {
+        sendUserMessage("deactivate veronica")
+    }
+
     val isBackgroundSentinelRunning: StateFlow<Boolean> = JarvisBackgroundService.isServiceRunning
     val backgroundStatusText: StateFlow<String> = JarvisBackgroundService.lastStatusText
     val isSystemSttAvailable: StateFlow<Boolean> = voiceEngine.isSystemSttAvailable
@@ -102,13 +151,45 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             if (!_isMuted.value) {
                 if (remainder.isBlank()) {
-                    voiceEngine.speak("At your command, sir.")
+                    // Spoken "wake up" only: Provide assistant verbal confirmation, then immediately begin listening for the directive!
+                    voiceEngine.speak("At your service, sir. What is your directive?") {
+                        voiceEngine.startListeningForCommand()
+                    }
                 } else {
-                    voiceEngine.speak("Yes, sir.")
                     sendUserMessage(remainder)
                 }
             } else if (remainder.isNotBlank()) {
                 sendUserMessage(remainder)
+            }
+        }
+    }
+
+    fun onPermissionGranted() {
+        voiceEngine.startListening()
+    }
+
+    fun runAntiVirusScan() {
+        if (_isScanningAntiVirus.value) return
+        _isScanningAntiVirus.value = true
+        voiceEngine.speak("Initiating cybernetic anti-virus scan, sir.")
+
+        viewModelScope.launch {
+            try {
+                val report = brain.antiVirusEngine.runDeepScan()
+                _antiVirusReport.value = report
+
+                repository.logAction(
+                    action = "ANTIVIRUS_SCAN",
+                    details = "Scanned ${report.totalAppsScanned} packages. Threat status: ${report.threatLevel}. Score: ${report.securityScore}%.",
+                    status = "COMPLETED"
+                )
+
+                val announcement = "Anti-virus scan complete, sir. ${report.totalAppsScanned} packages analyzed. Threat status is ${report.threatLevel}, with an overall security score of ${report.securityScore}%."
+                voiceEngine.speak(announcement)
+            } catch (e: Exception) {
+                voiceEngine.speak("Anti-virus scan completed with warnings, sir.")
+            } finally {
+                _isScanningAntiVirus.value = false
             }
         }
     }
@@ -127,14 +208,47 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     val amplitude: StateFlow<Float> = voiceEngine.amplitude
 
     init {
-        // Initial welcome message from JARVIS
+        // Monitor network state
+        val cm = application.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        if (cm != null) {
+            val isCurrentlyOnline = try {
+                val net = cm.activeNetwork
+                val caps = cm.getNetworkCapabilities(net)
+                caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            } catch (e: Exception) {
+                false
+            }
+            _isDeviceOnline.value = isCurrentlyOnline
+
+            try {
+                val request = NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build()
+                cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        _isDeviceOnline.value = true
+                    }
+                    override fun onLost(network: Network) {
+                        _isDeviceOnline.value = false
+                    }
+                })
+            } catch (e: Exception) {
+                // Ignore callback registration failures on restrictive platforms
+            }
+        }
+
+        // Initial welcome message from JARVIS highlighting offline capability & wake-word
         val initialGreeting = ChatMessage(
             sender = MessageSender.JARVIS,
-            text = "Good day, sir. J.A.R.V.I.S. online. All systems nominal. Holographic reactor initialized. How may I be of assistance?",
-            highLevelReasoning = "System startup sequence completed. All 7 peripheral tools mounted. Core memory and audio subroutines standing by.",
+            text = "Good day, sir. J.A.R.V.I.S. online. Autonomous offline intelligence engaged. Say 'Wake up' or tap the Arc Reactor to give a command.",
+            highLevelReasoning = "System startup sequence completed. All peripheral tools mounted. Core memory and offline audio subroutines standing by.",
             actionTaken = "System Diagnostics"
         )
         _messages.value = listOf(initialGreeting)
+        voiceEngine.speak(initialGreeting.text)
+
+        // Enable continuous Assistant Standby listening so saying 'Wake up' works immediately
+        voiceEngine.setContinuousListening(true)
 
         // Populate sample tactical memory and mission log if empty
         viewModelScope.launch {
@@ -164,7 +278,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         if (voiceState.value == JarvisVoiceState.LISTENING) {
             voiceEngine.stopListening()
         } else {
-            voiceEngine.startListening()
+            voiceEngine.startListening(playChime = true)
         }
     }
 

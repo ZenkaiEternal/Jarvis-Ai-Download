@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Shield
@@ -43,7 +44,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.JarvisVoiceState
 import com.example.ui.theme.JarvisCyan
+import com.example.ui.theme.JarvisCyanBright
 import com.example.ui.theme.JarvisGold
+import com.example.ui.theme.JarvisGoldBright
 import com.example.ui.theme.JarvisGreen
 import com.example.ui.theme.JarvisRedAlert
 import com.example.ui.theme.JarvisSurface
@@ -63,6 +66,9 @@ fun HudTelemetryHeader(
     onToggleMute: () -> Unit,
     isSentinelActive: Boolean = false,
     onToggleSentinel: () -> Unit = {},
+    isDeviceOnline: Boolean = false,
+    isVeronicaActive: Boolean = false,
+    onOpenVeronica: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var currentTime by remember { mutableStateOf("") }
@@ -140,8 +146,40 @@ fun HudTelemetryHeader(
                 )
             }
 
-            // Right: Background Sentinel Button & Status badge & Audio Mute toggle
+            // Right: Network Indicator & Background Sentinel Button & Status badge & Audio Mute toggle
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Autonomous Offline / Online Uplink Pill
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isDeviceOnline) JarvisGreen.copy(alpha = 0.15f) else JarvisCyan.copy(alpha = 0.15f))
+                        .border(
+                            1.dp,
+                            if (isDeviceOnline) JarvisGreen.copy(alpha = 0.5f) else JarvisCyan.copy(alpha = 0.4f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 7.dp, vertical = 5.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Bolt,
+                            contentDescription = null,
+                            tint = if (isDeviceOnline) JarvisGreen else JarvisCyanBright,
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = if (isDeviceOnline) "ONLINE" else "OFFLINE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isDeviceOnline) JarvisGreen else JarvisCyanBright,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 9.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
                 // Background Sentinel Toggle Pill
                 Box(
                     modifier = Modifier
@@ -153,7 +191,7 @@ fun HudTelemetryHeader(
                             RoundedCornerShape(8.dp)
                         )
                         .clickable(onClick = onToggleSentinel)
-                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                        .padding(horizontal = 7.dp, vertical = 5.dp)
                         .testTag("toggle_sentinel_header_button")
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -161,14 +199,48 @@ fun HudTelemetryHeader(
                             imageVector = Icons.Default.Shield,
                             contentDescription = "Background Sentinel",
                             tint = if (isSentinelActive) JarvisGreen else JarvisTextSecondary,
-                            modifier = Modifier.size(12.dp)
+                            modifier = Modifier.size(11.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = if (isSentinelActive) "SENTINEL: ON" else "SENTINEL: OFF",
+                            text = if (isSentinelActive) "SENTINEL" else "SENTINEL",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isSentinelActive) JarvisGreen else JarvisTextSecondary,
                             fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(5.dp))
+
+                // Veronica Protocol Pill
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isVeronicaActive) JarvisRedAlert.copy(alpha = 0.25f) else JarvisSurfaceVariant)
+                        .border(
+                            1.dp,
+                            if (isVeronicaActive) JarvisGoldBright else JarvisRedAlert.copy(alpha = 0.45f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable(onClick = onOpenVeronica)
+                        .padding(horizontal = 7.dp, vertical = 5.dp)
+                        .testTag("veronica_header_button")
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Public,
+                            contentDescription = "Veronica",
+                            tint = if (isVeronicaActive) JarvisGoldBright else JarvisRedAlert,
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = if (isVeronicaActive) "VERONICA" else "VERONICA",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isVeronicaActive) JarvisGoldBright else JarvisRedAlert,
+                            fontWeight = FontWeight.ExtraBold,
                             fontSize = 9.sp
                         )
                     }

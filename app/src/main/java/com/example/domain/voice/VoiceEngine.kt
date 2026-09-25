@@ -4,9 +4,12 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.ToneGenerator
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -15,6 +18,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.data.model.JarvisVoiceState
@@ -36,6 +40,10 @@ class VoiceEngine(
     private val onWakeWordDetected: (String) -> Unit
 ) : TextToSpeech.OnInitListener {
 
+    companion object {
+        private const val TAG = "VoiceEngine"
+    }
+
     private var tts: TextToSpeech? = null
     private var speechRecognizer: SpeechRecognizer? = null
     private var isTtsInitialized = false
@@ -50,6 +58,9 @@ class VoiceEngine(
     private val _lastSpokenTranscript = MutableStateFlow("")
     val lastSpokenTranscript: StateFlow<String> = _lastSpokenTranscript.asStateFlow()
 
+    private val _liveSpeechTranscript = MutableStateFlow("")
+    val liveSpeechTranscript: StateFlow<String> = _liveSpeechTranscript.asStateFlow()
+
     private val _isSystemSttAvailable = MutableStateFlow(false)
     val isSystemSttAvailable: StateFlow<Boolean> = _isSystemSttAvailable.asStateFlow()
 
@@ -62,10 +73,34 @@ class VoiceEngine(
     private var isListeningActive: Boolean = false
     private var audioRecord: AudioRecord? = null
 
+    // Pending speech queue in case speak() is called while TTS is initializing
+    private var pendingSpeechText: String? = null
+    private var pendingSpeechCallback: (() -> Unit)? = null
+
+    // Audio chime generator for acoustic feedback
+    private var toneGenerator: ToneGenerator? = null
+
     init {
+        try {
+            toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 85)
+        } catch (e: Exception) {
+            Log.w(TAG, "ToneGenerator initialization skipped", e)
+        }
         checkSystemCapabilities()
-        tts = TextToSpeech(context.applicationContext, this)
+        initTts()
         initSpeechRecognizer()
+    }
+
+    private fun initTts() {
+        mainHandler.post {
+            try {
+                tts?.stop()
+                tts?.shutdown()
+                tts = TextToSpeech(context, this)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing TextToSpeech", e)
+            }
+        }
     }
 
     private fun checkSystemCapabilities() {
@@ -75,20 +110,65 @@ class VoiceEngine(
             false
         }
         _isSystemSttAvailable.value = hasSpeechRec
-        Log.i("VoiceEngine", "Speech recognition service available: $hasSpeechRec (Google Play Services independent)")
+        Log.i(TAG, "Speech recognition service available: $hasSpeechRec")
     }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.let { engine ->
-                // JARVIS styling: Crisp British accent if available, otherwise default US/system
-                val ukLocale = Locale.UK
-                val result = engine.setLanguage(ukLocale)
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    engine.setLanguage(Locale.getDefault())
+                // Configure audio attributes for voice guidance
+                try {
+                    val audioAttributes = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                    engine.setAudioAttributes(audioAttributes)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not set AudioAttributes on TTS", e)
                 }
+
+                // JARVIS personality: Crisp British English voice if available, fallback gracefully
+                val localesToTry = listOf(
+                    Locale.UK,
+                    Locale("en", "GB"),
+                    Locale.ENGLISH,
+                    Locale.US,
+                    Locale.getDefault()
+                )
+
+                for (loc in localesToTry) {
+                    val result = engine.setLanguage(loc)
+                    if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+                        Log.i(TAG, "TTS language set to: ${loc.displayName}")
+                        break
+                    }
+                }
+
+                // Select preferred JARVIS voice profile (deep, sophisticated British male timbre)
+                try {
+                    val voices = engine.voices
+                    if (!voices.isNullOrEmpty()) {
+                        val preferredVoice = voices.firstOrNull { v ->
+                            val name = v.name.lowercase(Locale.ROOT)
+                            (name.contains("en-gb") || name.contains("en_gb")) &&
+                                    (name.contains("male") || !name.contains("female"))
+                        } ?: voices.firstOrNull { v ->
+                            v.name.lowercase(Locale.ROOT).contains("en-gb")
+                        } ?: voices.firstOrNull { v ->
+                            v.locale.language.equals("en", ignoreCase = true)
+                        }
+
+                        if (preferredVoice != null) {
+                            engine.voice = preferredVoice
+                            Log.i(TAG, "Selected voice: ${preferredVoice.name}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Voice enumeration not available or failed", e)
+                }
+
                 engine.setPitch(0.92f) // Slightly deeper, sophisticated
-                engine.setSpeechRate(1.05f) // Crisp and precise
+                engine.setSpeechRate(1.04f) // Crisp, precise cadence
 
                 engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
@@ -118,8 +198,18 @@ class VoiceEngine(
                 })
             }
             isTtsInitialized = true
+            Log.i(TAG, "TextToSpeech successfully initialized.")
+
+            // Drain any pending speech that arrived prior to initialization
+            pendingSpeechText?.let { queuedText ->
+                val callback = pendingSpeechCallback
+                pendingSpeechText = null
+                pendingSpeechCallback = null
+                speak(queuedText, callback)
+            }
         } else {
-            Log.e("VoiceEngine", "TextToSpeech initialization status: $status")
+            Log.e(TAG, "TextToSpeech initialization failed with status: $status")
+            isTtsInitialized = false
         }
     }
 
@@ -132,12 +222,13 @@ class VoiceEngine(
                         setRecognitionListener(createRecognitionListener())
                     }
                     _isSystemSttAvailable.value = true
+                    Log.i(TAG, "SpeechRecognizer created successfully.")
                 } else {
                     _isSystemSttAvailable.value = false
-                    Log.i("VoiceEngine", "SpeechRecognizer service not found. Using Native AudioRecord Sentinel.")
+                    Log.i(TAG, "System SpeechRecognizer not available. Fallback to Native AudioRecord sentinel.")
                 }
             } catch (e: Exception) {
-                Log.w("VoiceEngine", "SpeechRecognizer init exception, falling back to Native AudioRecord", e)
+                Log.w(TAG, "SpeechRecognizer init exception, falling back to Native AudioRecord", e)
                 _isSystemSttAvailable.value = false
             }
         }
@@ -146,6 +237,7 @@ class VoiceEngine(
     private fun createRecognitionListener() = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
             isListeningActive = true
+            _liveSpeechTranscript.value = ""
             if (!isSpeakingNow) {
                 _voiceState.value = JarvisVoiceState.LISTENING
             }
@@ -174,17 +266,33 @@ class VoiceEngine(
         }
 
         override fun onError(error: Int) {
+            Log.w(TAG, "SpeechRecognizer error: $error")
             isListeningActive = false
             _amplitude.value = 0.1f
+
             if (!isSpeakingNow) {
                 _voiceState.value = JarvisVoiceState.IDLE
             }
-            // If SpeechRecognizer failed due to client or server error (e.g. no GMS), fall back to Native AudioRecord
-            if (!_isSystemSttAvailable.value || error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_SERVER) {
+
+            if (error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                // Re-initialize clean speech recognizer without killing the subsystem
+                initSpeechRecognizer()
+            }
+
+            // Fallback to Native AudioRecord ONLY if system has no speech recognition service at all
+            if (!_isSystemSttAvailable.value) {
                 startNativeAudioHardwareSentinel()
             }
+
             if (isContinuousMode && !isSpeakingNow) {
-                scheduleRestartListening(if (error == SpeechRecognizer.ERROR_NO_MATCH) 250 else 600)
+                val restartDelay = when (error) {
+                    SpeechRecognizer.ERROR_NO_MATCH -> 200L
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> 250L
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 500L
+                    SpeechRecognizer.ERROR_CLIENT -> 600L
+                    else -> 700L
+                }
+                scheduleRestartListening(restartDelay)
             }
         }
 
@@ -199,11 +307,12 @@ class VoiceEngine(
 
             if (text.isNotBlank()) {
                 _lastSpokenTranscript.value = text
+                _liveSpeechTranscript.value = text
                 handleSpokenText(text)
             }
 
             if (isContinuousMode && !isSpeakingNow) {
-                scheduleRestartListening(300)
+                scheduleRestartListening(400)
             }
         }
 
@@ -212,9 +321,10 @@ class VoiceEngine(
             val text = matches?.firstOrNull() ?: ""
             if (text.isNotBlank()) {
                 _lastSpokenTranscript.value = text
-                if (containsWakeWord(text)) {
-                    val remainder = extractCommandAfterWakeWord(text)
-                    onWakeWordDetected(remainder)
+                _liveSpeechTranscript.value = text
+                if (containsWakeWord(text) && !hasChimedForCurrentTurn) {
+                    hasChimedForCurrentTurn = true
+                    playWakeChime()
                 }
             }
         }
@@ -222,45 +332,85 @@ class VoiceEngine(
         override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
+    private var hasChimedForCurrentTurn = false
+    private var isAwaitingDirective = false
+
+    fun playAcousticChime() {
+        try {
+            toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 120)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not play acoustic chime", e)
+        }
+    }
+
+    /**
+     * Iconic 2-tone melodic Google Assistant / JARVIS futuristic wake chime.
+     */
+    fun playWakeChime() {
+        scope.launch(Dispatchers.Default) {
+            try {
+                toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 80)
+                delay(85)
+                toneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 130)
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not play wake chime", e)
+            }
+        }
+    }
+
     fun containsWakeWord(text: String): Boolean {
-        val lower = text.lowercase(Locale.ROOT)
-        return lower.contains("hey jarvis") ||
+        val lower = text.lowercase(Locale.ROOT).trim()
+        return lower.contains("wake up") ||
+                lower.contains("wake-up") ||
+                lower.contains("hey jarvis") ||
                 lower.contains("jarvis") ||
                 lower.contains("hello jarvis") ||
                 lower.contains("hi jarvis") ||
                 lower.contains("ok jarvis") ||
                 lower.contains("okay jarvis") ||
                 lower.contains("yo jarvis") ||
-                lower.contains("wake up jarvis") ||
-                lower.contains("wake up")
+                lower.startsWith("wake")
     }
 
     fun extractCommandAfterWakeWord(text: String): String {
         val lower = text.lowercase(Locale.ROOT)
         val cleaned = lower
+            .replace("wake up jarvis", "")
+            .replace("wake up", "")
+            .replace("wake-up", "")
             .replace("hey jarvis", "")
             .replace("hello jarvis", "")
             .replace("hi jarvis", "")
             .replace("okay jarvis", "")
             .replace("ok jarvis", "")
             .replace("yo jarvis", "")
-            .replace("wake up jarvis", "")
-            .replace("wake up", "")
             .replace("jarvis", "")
             .trim()
-            .trimStart(',', ':', '-', ' ')
+            .trimStart(',', ':', '-', ' ', '!', '?')
         return cleaned
     }
 
     private fun handleSpokenText(text: String) {
-        if (containsWakeWord(text)) {
-            val command = extractCommandAfterWakeWord(text)
-            onWakeWordDetected(command)
+        hasChimedForCurrentTurn = false
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return
+
+        if (containsWakeWord(trimmed)) {
+            val command = extractCommandAfterWakeWord(trimmed)
             if (command.isNotBlank()) {
+                isAwaitingDirective = false
+                playAcousticChime()
                 onSpeechRecognized(command)
+            } else {
+                isAwaitingDirective = true
+                playWakeChime()
+                onWakeWordDetected("")
             }
         } else {
-            onSpeechRecognized(text)
+            // User spoken text is directly a command/directive!
+            isAwaitingDirective = false
+            playAcousticChime()
+            onSpeechRecognized(trimmed)
         }
     }
 
@@ -273,8 +423,21 @@ class VoiceEngine(
         }
     }
 
-    fun startListening() {
+    /**
+     * Opens active listening specifically for the user's directive after wake acknowledgment.
+     */
+    fun startListeningForCommand() {
+        isAwaitingDirective = true
         if (isSpeakingNow) return
+        startListening(playChime = true)
+    }
+
+    fun startListening(playChime: Boolean = false) {
+        if (isSpeakingNow) return
+        hasChimedForCurrentTurn = false
+        if (playChime) {
+            playWakeChime()
+        }
         mainHandler.post {
             val hasPermission = ContextCompat.checkSelfPermission(
                 context,
@@ -282,29 +445,33 @@ class VoiceEngine(
             ) == PackageManager.PERMISSION_GRANTED
 
             if (!hasPermission) {
-                Log.w("VoiceEngine", "RECORD_AUDIO permission not granted.")
+                Log.w(TAG, "RECORD_AUDIO permission not granted.")
                 return@post
             }
 
-            if (_isSystemSttAvailable.value && speechRecognizer != null) {
+            if (_isSystemSttAvailable.value) {
+                if (speechRecognizer == null) {
+                    initSpeechRecognizer()
+                }
                 try {
                     val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
                         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
-                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
+                        putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
+                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1400L)
                     }
                     _voiceState.value = JarvisVoiceState.LISTENING
                     speechRecognizer?.startListening(intent)
                     return@post
                 } catch (e: Exception) {
-                    Log.w("VoiceEngine", "SpeechRecognizer failed, falling back to Native AudioRecord", e)
+                    Log.w(TAG, "SpeechRecognizer startListening failed, falling back to Native AudioRecord", e)
                 }
             }
 
-            // Fallback for devices without Google Play Services or without SpeechRecognizer
+            // Standalone Fallback for devices without Google Play Services or without SpeechRecognizer
             startNativeAudioHardwareSentinel()
         }
     }
@@ -342,7 +509,7 @@ class VoiceEngine(
                 audioRecord = recorder
 
                 if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-                    Log.e("VoiceEngine", "AudioRecord initialization failed.")
+                    Log.e(TAG, "AudioRecord initialization failed.")
                     return@launch
                 }
 
@@ -369,10 +536,11 @@ class VoiceEngine(
                             voicePeakCount++
                             val now = System.currentTimeMillis()
                             // If user speaks (sustained vocal energy) and cooldown passed
-                            if (voicePeakCount >= 3 && now - lastTriggerTime > 4000L) {
+                            if (voicePeakCount >= 3 && now - lastTriggerTime > 3500L) {
                                 lastTriggerTime = now
                                 voicePeakCount = 0
                                 mainHandler.post {
+                                    playWakeChime()
                                     onWakeWordDetected("")
                                 }
                             }
@@ -390,7 +558,7 @@ class VoiceEngine(
                     // Ignore release errors
                 }
             } catch (e: Exception) {
-                Log.e("VoiceEngine", "Error in Native AudioRecord Sentinel", e)
+                Log.e(TAG, "Error in Native AudioRecord Sentinel", e)
             } finally {
                 if (!isSpeakingNow && !isContinuousMode) {
                     _voiceState.value = JarvisVoiceState.IDLE
@@ -416,8 +584,9 @@ class VoiceEngine(
         mainHandler.post {
             try {
                 speechRecognizer?.stopListening()
+                speechRecognizer?.cancel()
             } catch (e: Exception) {
-                Log.e("VoiceEngine", "Failed to stop listening", e)
+                Log.e(TAG, "Failed to stop listening", e)
             }
             stopNativeAudioHardwareSentinel()
             isListeningActive = false
@@ -441,61 +610,69 @@ class VoiceEngine(
             .replace(Regex("\\[.*?\\]"), "")
             .trim()
 
+        if (spokenText.isBlank()) {
+            onFinished?.invoke()
+            return
+        }
+
         if (!isTtsInitialized || tts == null) {
-            // Graceful fallback when on-device TTS is not installed or initializing
-            Log.w("VoiceEngine", "TTS not initialized, simulating visual speech output.")
-            isSpeakingNow = true
-            _voiceState.value = JarvisVoiceState.SPEAKING
-            startSimulatedAmplitudeForSpeech()
-            scope.launch(Dispatchers.Main) {
-                // Approximate reading duration
-                val readingDelay = (spokenText.length * 40L).coerceIn(1000L, 4000L)
-                delay(readingDelay)
-                isSpeakingNow = false
-                _voiceState.value = JarvisVoiceState.IDLE
-                stopSimulatedAmplitude()
-                onFinished?.invoke()
-                if (isContinuousMode) {
-                    scheduleRestartListening(400)
-                }
-            }
+            Log.w(TAG, "TTS not yet initialized. Queuing utterance: $spokenText")
+            pendingSpeechText = spokenText
+            pendingSpeechCallback = onFinished
+            // Attempt re-init in case it hadn't started
+            initTts()
             return
         }
 
         val utteranceId = "JARVIS_${System.currentTimeMillis()}"
 
-        if (onFinished != null) {
-            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(id: String?) {
-                    isSpeakingNow = true
-                    _voiceState.value = JarvisVoiceState.SPEAKING
-                    startSimulatedAmplitudeForSpeech()
-                }
+        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(id: String?) {
+                isSpeakingNow = true
+                _voiceState.value = JarvisVoiceState.SPEAKING
+                startSimulatedAmplitudeForSpeech()
+            }
 
-                override fun onDone(id: String?) {
-                    isSpeakingNow = false
-                    _voiceState.value = JarvisVoiceState.IDLE
-                    stopSimulatedAmplitude()
-                    onFinished()
-                    if (isContinuousMode) {
-                        scheduleRestartListening(400)
+            override fun onDone(id: String?) {
+                isSpeakingNow = false
+                _voiceState.value = JarvisVoiceState.IDLE
+                stopSimulatedAmplitude()
+                if (onFinished != null) {
+                    mainHandler.post {
+                        onFinished.invoke()
                     }
+                } else if (isContinuousMode) {
+                    scheduleRestartListening(400)
                 }
+            }
 
-                @Deprecated("Deprecated in Java")
-                override fun onError(id: String?) {
-                    isSpeakingNow = false
-                    _voiceState.value = JarvisVoiceState.IDLE
-                    stopSimulatedAmplitude()
-                    onFinished()
-                    if (isContinuousMode) {
-                        scheduleRestartListening(400)
+            @Deprecated("Deprecated in Java")
+            override fun onError(id: String?) {
+                isSpeakingNow = false
+                _voiceState.value = JarvisVoiceState.IDLE
+                stopSimulatedAmplitude()
+                if (onFinished != null) {
+                    mainHandler.post {
+                        onFinished.invoke()
                     }
+                } else if (isContinuousMode) {
+                    scheduleRestartListening(400)
                 }
-            })
+            }
+        })
+
+        val params = Bundle().apply {
+            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
         }
 
-        tts?.speak(spokenText, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        val result = tts?.speak(spokenText, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+        if (result != TextToSpeech.SUCCESS) {
+            Log.w(TAG, "TTS speak failed with code: $result. Retrying...")
+            isSpeakingNow = false
+            _voiceState.value = JarvisVoiceState.IDLE
+            stopSimulatedAmplitude()
+        }
     }
 
     fun stopSpeaking() {
@@ -519,7 +696,7 @@ class VoiceEngine(
         speechSimJob?.cancel()
         speechSimJob = scope.launch(Dispatchers.Default) {
             while (isActive && _voiceState.value == JarvisVoiceState.SPEAKING) {
-                val nextAmp = (0.25f + Math.random().toFloat() * 0.70f).coerceIn(0.1f, 1.0f)
+                val nextAmp = (0.28f + Math.random().toFloat() * 0.68f).coerceIn(0.1f, 1.0f)
                 _amplitude.value = nextAmp
                 delay(60)
             }
@@ -541,8 +718,14 @@ class VoiceEngine(
         try {
             speechRecognizer?.destroy()
         } catch (e: Exception) {
-            Log.e("VoiceEngine", "Error destroying speech recognizer", e)
+            Log.e(TAG, "Error destroying speech recognizer", e)
         }
         speechSimJob?.cancel()
+        try {
+            toneGenerator?.release()
+        } catch (e: Exception) {
+            // Ignore
+        }
+        toneGenerator = null
     }
 }

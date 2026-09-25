@@ -3,6 +3,7 @@ package com.example.domain.tools
 import android.content.Context
 import android.content.Intent
 import android.hardware.camera2.CameraManager
+import android.media.AudioManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.provider.Settings
@@ -263,37 +264,105 @@ class AppLauncherTool : JarvisTool {
 
 class SystemControlTool : JarvisTool {
     override val id = "system_control"
-    override val name = "Diagnostics & System Diagnostics"
-    override val description = "Monitors hardware telemetry (battery, memory, power) and toggles auxiliary hardware."
-    override val category = "HARDWARE"
+    override val name = "Device Settings & Hardware Diagnostics"
+    override val description = "Controls device settings (volume, mute, flashlight, Wi-Fi, Bluetooth, display, ringer mode) and hardware telemetry."
+    override val category = "SYSTEM"
     override val parameters = listOf(
-        ToolParameter("action", "Action: 'battery', 'specs', 'flashlight_on', 'flashlight_off'")
+        ToolParameter("action", "Action: 'volume_up', 'volume_down', 'volume_mute', 'volume_max', 'ringer_vibrate', 'ringer_silent', 'ringer_normal', 'flashlight_on', 'flashlight_off', 'open_wifi', 'open_bluetooth', 'open_display', 'open_settings', 'battery'")
     )
     override val isConsequential = false
 
     override suspend fun execute(context: Context, params: Map<String, String>): ToolResult {
         val action = params["action"]?.lowercase(Locale.ROOT)?.trim() ?: "battery"
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
         when (action) {
             "flashlight_on" -> {
-                try {
+                return try {
                     val camManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
                     val cameraId = camManager.cameraIdList.firstOrNull() ?: ""
                     camManager.setTorchMode(cameraId, true)
-                    return ToolResult(true, "Flashlight optical emitter activated, sir.")
+                    ToolResult(true, "Flashlight optical emitter activated, sir.")
                 } catch (e: Exception) {
-                    return ToolResult(false, "Unable to toggle optical emitter: ${e.message}")
+                    ToolResult(false, "Unable to toggle optical emitter: ${e.message}")
                 }
             }
             "flashlight_off" -> {
-                try {
+                return try {
                     val camManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
                     val cameraId = camManager.cameraIdList.firstOrNull() ?: ""
                     camManager.setTorchMode(cameraId, false)
-                    return ToolResult(true, "Flashlight optical emitter deactivated.")
+                    ToolResult(true, "Flashlight optical emitter deactivated, sir.")
                 } catch (e: Exception) {
-                    return ToolResult(false, "Unable to toggle optical emitter: ${e.message}")
+                    ToolResult(false, "Unable to toggle optical emitter: ${e.message}")
                 }
+            }
+            "volume_up" -> {
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+                val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val pct = (current * 100) / max
+                return ToolResult(true, "Volume increased to $pct%, sir.")
+            }
+            "volume_down" -> {
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+                val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val pct = (current * 100) / max
+                return ToolResult(true, "Volume decreased to $pct%, sir.")
+            }
+            "volume_mute" -> {
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI)
+                return ToolResult(true, "Audio muted, sir. Media stream set to zero.")
+            }
+            "volume_max" -> {
+                val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, max, AudioManager.FLAG_SHOW_UI)
+                return ToolResult(true, "Volume set to maximum (100%), sir.")
+            }
+            "ringer_vibrate" -> {
+                audioManager.ringerMode = AudioManager.RINGER_MODE_VIBRATE
+                return ToolResult(true, "Ringer set to Vibrate mode, sir.")
+            }
+            "ringer_silent" -> {
+                audioManager.ringerMode = AudioManager.RINGER_MODE_SILENT
+                return ToolResult(true, "Ringer set to Silent mode, sir.")
+            }
+            "ringer_normal" -> {
+                audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
+                return ToolResult(true, "Ringer set to Normal audible mode, sir.")
+            }
+            "open_wifi" -> {
+                val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                return ToolResult(
+                    success = true,
+                    summary = "Opening Wi-Fi network settings, sir.",
+                    directAction = { context.startActivity(intent) }
+                )
+            }
+            "open_bluetooth" -> {
+                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                return ToolResult(
+                    success = true,
+                    summary = "Opening Bluetooth hardware settings, sir.",
+                    directAction = { context.startActivity(intent) }
+                )
+            }
+            "open_display" -> {
+                val intent = Intent(Settings.ACTION_DISPLAY_SETTINGS).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                return ToolResult(
+                    success = true,
+                    summary = "Opening Display and Brightness settings, sir.",
+                    directAction = { context.startActivity(intent) }
+                )
+            }
+            "open_settings" -> {
+                val intent = Intent(Settings.ACTION_SETTINGS).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                return ToolResult(
+                    success = true,
+                    summary = "Opening Master Device Settings, sir.",
+                    directAction = { context.startActivity(intent) }
+                )
             }
             else -> {
                 val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager

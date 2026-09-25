@@ -28,10 +28,14 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -60,11 +64,13 @@ import com.example.data.model.ChatMessage
 import com.example.data.model.JarvisVoiceState
 import com.example.ui.components.ArcReactorView
 import com.example.ui.components.ChatBubbleHud
+import com.example.ui.components.GoogleAssistantListeningSheet
 import com.example.ui.components.HudWaveform
 import com.example.ui.theme.JarvisBackground
 import com.example.ui.theme.JarvisCyan
 import com.example.ui.theme.JarvisCyanBright
 import com.example.ui.theme.JarvisGold
+import com.example.ui.theme.JarvisGoldBright
 import com.example.ui.theme.JarvisGreen
 import com.example.ui.theme.JarvisRedAlert
 import com.example.ui.theme.JarvisSurface
@@ -78,13 +84,17 @@ fun HudCoreTab(
     voiceState: JarvisVoiceState,
     amplitude: Float,
     messages: List<ChatMessage>,
+    liveSpeechTranscript: String = "",
     onToggleVoice: () -> Unit,
     onSendMessage: (String) -> Unit,
     onSpeakMessage: (String) -> Unit,
     onOpenDocScanner: () -> Unit,
+    onOpenVeronica: () -> Unit = {},
+    onLaunchSystemVoiceDialog: () -> Unit = {},
     isSentinelActive: Boolean = false,
     onToggleSentinel: () -> Unit = {},
     sentinelStatus: String = "STANDBY",
+    isDeviceOnline: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var inputText by remember { mutableStateOf("") }
@@ -97,61 +107,64 @@ fun HudCoreTab(
         }
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(JarvisBackground)
     ) {
-        // Upper HUD Zone: Central Arc Reactor & Waveform
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 6.dp),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier.fillMaxSize()
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
+            // Upper HUD Zone: Central Arc Reactor & Waveform
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, bottom = 4.dp),
+                contentAlignment = Alignment.Center
             ) {
-                // Arc Reactor Interactive Core
-                ArcReactorView(
-                    voiceState = voiceState,
-                    amplitude = amplitude,
-                    size = 180.dp,
-                    onClick = onToggleVoice
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Arc Reactor Interactive Core
+                    ArcReactorView(
+                        voiceState = voiceState,
+                        amplitude = amplitude,
+                        size = 175.dp,
+                        onClick = onToggleVoice
+                    )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                // Voice Waveform HUD
-                HudWaveform(
-                    voiceState = voiceState,
-                    amplitude = amplitude,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    height = 36.dp
-                )
+                    // Voice Waveform HUD
+                    HudWaveform(
+                        voiceState = voiceState,
+                        amplitude = amplitude,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        height = 32.dp
+                    )
 
-                // Status Prompt
-                Text(
-                    text = when (voiceState) {
-                        JarvisVoiceState.LISTENING -> "LISTENING TO MICROPHONE // 'HEY JARVIS'"
-                        JarvisVoiceState.THINKING -> "QUANTUM NEURAL PROCESSING..."
-                        JarvisVoiceState.SPEAKING -> "TRANSMITTING VOCAL SYNTHESIS"
-                        JarvisVoiceState.IDLE -> "TAP REACTOR OR SAY 'HEY JARVIS' TO ACTIVATE"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = when (voiceState) {
-                        JarvisVoiceState.LISTENING -> JarvisGreen
-                        JarvisVoiceState.THINKING -> JarvisGold
-                        JarvisVoiceState.SPEAKING -> JarvisCyanBright
-                        JarvisVoiceState.IDLE -> JarvisCyan.copy(alpha = 0.8f)
-                    },
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp
-                )
+                    // Status Prompt
+                    Text(
+                        text = when (voiceState) {
+                            JarvisVoiceState.LISTENING -> if (liveSpeechTranscript.isNotBlank()) "HEARING: \"$liveSpeechTranscript\"" else "LISTENING FOR DIRECTIVE // 'WAKE UP' ACTIVE"
+                            JarvisVoiceState.THINKING -> if (!isDeviceOnline) "COMPUTING OFFLINE TACTICAL MATRIX..." else "QUANTUM NEURAL PROCESSING..."
+                            JarvisVoiceState.SPEAKING -> "TRANSMITTING VOCAL SYNTHESIS"
+                            JarvisVoiceState.IDLE -> "SAY 'WAKE UP' OR 'HEY JARVIS' // TAP REACTOR"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when (voiceState) {
+                            JarvisVoiceState.LISTENING -> JarvisGreen
+                            JarvisVoiceState.THINKING -> JarvisGold
+                            JarvisVoiceState.SPEAKING -> JarvisCyanBright
+                            JarvisVoiceState.IDLE -> JarvisCyan.copy(alpha = 0.85f)
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
             }
-        }
 
-        // Background Sentinel Protocol Quick HUD Bar
+        // Background Sentinel Protocol Quick HUD Bar (Google Assistant Mode)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -182,14 +195,14 @@ fun HudCoreTab(
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text(
-                            text = if (isSentinelActive) "BACKGROUND SENTINEL: ACTIVE" else "BACKGROUND SENTINEL: DISENGAGED",
+                            text = if (isSentinelActive) "ASSISTANT SENTINEL: ACTIVE (LISTENING FOR 'WAKE UP')" else "ASSISTANT SENTINEL: DISENGAGED",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isSentinelActive) JarvisGreen else JarvisCyan,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp
                         )
                         Text(
-                            text = if (isSentinelActive) "Autonomous sentinel active (no Google Play Services needed). Say 'Jarvis'." else "Tap to enable always-on background wake-word (autonomous / no GMS).",
+                            text = if (isSentinelActive) "Autonomous offline wake ready. Works like Google Assistant. Say 'Wake up'." else "Tap to enable 24/7 background wake-word ('Wake up' / 'Hey Jarvis').",
                             style = MaterialTheme.typography.labelSmall,
                             color = JarvisTextSecondary,
                             fontSize = 9.sp
@@ -209,7 +222,7 @@ fun HudCoreTab(
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = if (isSentinelActive) "STOP" else "ACTIVATE",
+                        text = if (isSentinelActive) "DISENGAGE" else "ACTIVATE",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isSentinelActive) JarvisRedAlert else JarvisCyan,
                         fontWeight = FontWeight.ExtraBold,
@@ -227,17 +240,26 @@ fun HudCoreTab(
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            QuickCommandChip("🚀 Veronica (Code: 3000)", Icons.Default.Public) {
+                onOpenVeronica()
+            }
+            QuickCommandChip("🔦 Flashlight", Icons.Default.FlashlightOn) {
+                onSendMessage("turn on flashlight")
+            }
+            QuickCommandChip("🛡️ Anti-Virus Scan", Icons.Default.Security) {
+                onSendMessage("run antivirus scan")
+            }
+            QuickCommandChip("⚙️ Device Settings", Icons.Default.Settings) {
+                onSendMessage("open device settings")
+            }
+            QuickCommandChip("⚡ Battery Diagnostics", Icons.Default.Sensors) {
+                onSendMessage("battery status")
+            }
             QuickCommandChip("🌤 Weather Scan", Icons.Default.Cloud) {
                 onSendMessage("What's the weather in San Francisco?")
             }
-            QuickCommandChip("⚡ System Diagnostics", Icons.Default.Sensors) {
-                onSendMessage("Run system diagnostics and battery check")
-            }
             QuickCommandChip("🧠 Core Memories", Icons.Default.Memory) {
                 onSendMessage("What do you remember about me?")
-            }
-            QuickCommandChip("🧮 Compute sqrt(256)", Icons.Default.Calculate) {
-                onSendMessage("calculate sqrt(256) * 15")
             }
             QuickCommandChip("📑 Document Scanner", Icons.Default.Description) {
                 onOpenDocScanner()
@@ -350,6 +372,20 @@ fun HudCoreTab(
                 )
             }
         }
+    }
+
+    // Google Assistant-Style Live Listening Overlay
+    GoogleAssistantListeningSheet(
+        voiceState = voiceState,
+        amplitude = amplitude,
+        liveTranscript = liveSpeechTranscript,
+        onStopListening = onToggleVoice,
+        onCommandSelected = { cmd ->
+            onSendMessage(cmd)
+        },
+        onLaunchSystemVoiceDialog = onLaunchSystemVoiceDialog,
+        modifier = Modifier.align(Alignment.BottomCenter)
+    )
     }
 }
 

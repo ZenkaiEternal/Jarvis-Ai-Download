@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JARVIS HUD - APK Download Portal</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: rgba(16, 24, 40, 0.85);
+      --primary: #00f0ff;
+      --primary-glow: rgba(0, 240, 255, 0.35);
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #10b981;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(circle at 50% 20%, rgba(0, 240, 255, 0.08) 0%, transparent 60%),
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 32px 32px, 32px 32px;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .container {
+      background: var(--card-bg);
+      border: 1px solid rgba(0, 240, 255, 0.25);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 25px var(--primary-glow);
+      border-radius: 20px;
+      max-width: 540px;
+      width: 100%;
+      padding: 36px 30px;
+      text-align: center;
+      backdrop-filter: blur(16px);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .badge::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+      color: #ffffff;
+      text-transform: uppercase;
+    }
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 28px;
+      line-height: 1.5;
+    }
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: 100%;
+      background: linear-gradient(135deg, #00f0ff, #0284c7);
+      color: #031322;
+      font-weight: 700;
+      font-size: 16px;
+      padding: 16px 24px;
+      border-radius: 12px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 20px rgba(0, 240, 255, 0.4);
+      cursor: pointer;
+    }
+    .btn-download:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0, 240, 255, 0.6);
+      background: linear-gradient(135deg, #38bdf8, #00f0ff);
+    }
+    .btn-download svg {
+      width: 22px;
+      height: 22px;
+    }
+    .specs-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 28px 0;
+      text-align: left;
+    }
+    .spec-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 12px;
+      border-radius: 10px;
+    }
+    .spec-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .spec-val {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 4px;
+    }
+    .instructions {
+      text-align: left;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .instructions ol {
+      margin-left: 20px;
+      margin-top: 8px;
+    }
+    .instructions li {
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="badge">Standalone Build Ready</div>
+    <h1>JARVIS HUD Sentinel</h1>
+    <p class="subtitle">Autonomous Voice Activation & System Intelligence<br>(AOSP & De-Googled Compatible)</p>
+    
+    <a href="/jarvis-sentinel.apk" download="jarvis-sentinel.apk" class="btn-download">
+      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/></svg>
+      Download APK Package
+    </a>
+
+    <div class="specs-grid">
+      <div class="spec-item">
+        <div class="spec-label">Package</div>
+        <div class="spec-val">jarvis-sentinel.apk</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-label">Size</div>
+        <div class="spec-val">~22.3 MB</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-label">Voice Trigger</div>
+        <div class="spec-val">"Jarvis" Keyword</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-label">Architecture</div>
+        <div class="spec-val">Zero Play Services</div>
+      </div>
+    </div>
+
+    <div class="instructions">
+      <strong>Installation Instructions:</strong>
+      <ol>
+        <li>Click <strong>Download APK Package</strong> above on your Android phone or tablet.</li>
+        <li>Open the downloaded <code>jarvis-sentinel.apk</code> file.</li>
+        <li>Enable <em>"Install unknown apps"</em> in Android Settings if prompted.</li>
+        <li>Launch JARVIS HUD, enable the background sentinel, and speak <em>"Jarvis"</em> to activate!</li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>

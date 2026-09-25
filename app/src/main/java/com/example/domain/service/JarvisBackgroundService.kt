@@ -128,9 +128,9 @@ class JarvisBackgroundService : Service() {
             return START_NOT_STICKY
         }
 
-        startForegroundNotification("Listening for 'Jarvis' in background...")
+        startForegroundNotification("Listening for 'Wake up' or 'Jarvis'...")
         _isServiceRunning.value = true
-        _lastStatusText.value = "SENTINEL ACTIVE // MONITORING AUDIO"
+        _lastStatusText.value = "SENTINEL ACTIVE // MONITORING 'WAKE UP'"
 
         voiceEngine?.setContinuousListening(true)
 
@@ -138,14 +138,32 @@ class JarvisBackgroundService : Service() {
     }
 
     private fun handleWakeWordActivated(remainder: String) {
-        Log.i(TAG, "Wake word 'Jarvis' detected! Remainder: $remainder")
+        Log.i(TAG, "Wake word detected in background! Remainder: $remainder")
         _lastStatusText.value = "WAKE WORD DETECTED // ACTIVATING"
-        updateNotification("Wake word detected: 'Jarvis'")
+        updateNotification("Wake up detected: 'At your service, sir'")
+
+        // Wake screen when locked
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            val screenLock = pm.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "JARVIS::LockScreenWake"
+            )
+            screenLock.acquire(8000L)
+            val launchIntent = Intent(applicationContext, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            }
+            startActivity(launchIntent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not wake lock screen", e)
+        }
 
         if (remainder.isBlank()) {
-            voiceEngine?.speak("At your command, sir.") {
+            voiceEngine?.speak("At your service, sir.") {
                 _lastStatusText.value = "SENTINEL ACTIVE // LISTENING"
                 updateNotification("Listening for instruction...")
+                voiceEngine?.startListeningForCommand()
             }
         } else {
             handleCommandFromBackground(remainder)
@@ -182,8 +200,8 @@ class JarvisBackgroundService : Service() {
 
                 // Speak response out loud
                 voiceEngine?.speak(responseText) {
-                    _lastStatusText.value = "SENTINEL ACTIVE // MONITORING AUDIO"
-                    updateNotification("Listening for 'Jarvis' in background...")
+                    _lastStatusText.value = "SENTINEL ACTIVE // MONITORING 'WAKE UP'"
+                    updateNotification("Listening for 'Wake up' in background...")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error executing background query", e)
