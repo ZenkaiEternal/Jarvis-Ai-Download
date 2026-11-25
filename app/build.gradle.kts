@@ -43,7 +43,30 @@ android {
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      signingConfig = signingConfigs.getByName("debugConfig")
+      ndk {
+        abiFilters += listOf("arm64-v8a", "x86_64")
+      }
+    }
+    create("compact") {
+      initWith(getByName("debug"))
+      isDebuggable = false
+      isMinifyEnabled = true
+      isShrinkResources = true
+      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      signingConfig = signingConfigs.getByName("debugConfig")
+      matchingFallbacks += listOf("debug", "release")
+      ndk {
+        abiFilters.clear()
+        abiFilters += listOf("arm64-v8a")
+      }
+    }
+  }
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
