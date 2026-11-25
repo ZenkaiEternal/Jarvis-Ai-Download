@@ -5,18 +5,19 @@ let mainWindow = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 880,
-    minWidth: 900,
-    minHeight: 620,
-    backgroundColor: '#030305',
+    width: 1440,
+    height: 900,
+    minWidth: 940,
+    minHeight: 640,
+    backgroundColor: '#03050a',
+    icon: path.join(__dirname, 'icon.png'),
     title: 'JARVIS 3D Gesture Control',
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#050811',
       symbolColor: '#00f0ff',
-      height: 34
+      height: 36
     },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -34,7 +35,6 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // Automatically grant webcam / microphone permissions inside the local Electron desktop app
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     if (permission === 'media' || permission === 'fullscreen') {
       callback(true);
