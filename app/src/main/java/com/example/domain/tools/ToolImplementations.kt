@@ -207,7 +207,29 @@ class AppLauncherTool : JarvisTool {
     override suspend fun execute(context: Context, params: Map<String, String>): ToolResult {
         val target = params["target"]?.lowercase(Locale.ROOT)?.trim() ?: ""
 
-        val (intent, targetLabel) = when {
+        // First try resolving installed apps by label via PackageManager (Google Assistant behavior)
+        val installedLaunchIntent = if (target.isNotBlank()) {
+            try {
+                val pm = context.packageManager
+                val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                }
+                val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
+                val match = resolveInfos.firstOrNull { info ->
+                    val label = info.loadLabel(pm).toString().lowercase(Locale.ROOT)
+                    label == target || label.contains(target) || target.contains(label)
+                }
+                match?.let { info ->
+                    pm.getLaunchIntentForPackage(info.activityInfo.packageName)?.let { launchIntent ->
+                        launchIntent.apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK } to info.loadLabel(pm).toString()
+                    }
+                }
+            } catch (e: Exception) {
+                null
+            }
+        } else null
+
+        val (intent, targetLabel) = installedLaunchIntent ?: when {
             target.contains("camera") -> {
                 Intent("android.media.action.IMAGE_CAPTURE") to "Optical Camera Sensor"
             }
@@ -221,6 +243,22 @@ class AppLauncherTool : JarvisTool {
                 Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_APP_CALCULATOR)
                 } to "Native Calculator"
+            }
+            target.contains("clock") || target.contains("alarm") || target.contains("timer") -> {
+                Intent("android.intent.action.SHOW_ALARMS") to "Clock & Alarms"
+            }
+            target.contains("phone") || target.contains("dial") || target.contains("call") -> {
+                Intent(Intent.ACTION_DIAL) to "Phone Dialer"
+            }
+            target.contains("message") || target.contains("sms") -> {
+                Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_APP_MESSAGING)
+                } to "Messaging"
+            }
+            target.contains("email") || target.contains("mail") || target.contains("gmail") -> {
+                Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_APP_EMAIL)
+                } to "Email Client"
             }
             target.contains("youtube") -> {
                 Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com")) to "YouTube Media Feed"

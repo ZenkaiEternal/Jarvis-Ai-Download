@@ -1,6 +1,6 @@
 {
-  "name": "J.A.R.V.I.S.",
-  "description": "Futuristic personal AI assistant with voice recognition, animated HUD reactor, memory vault, and modular tools.",
+  "name": "JARVIS X",
+  "description": "OpenJarvis-powered futuristic holographic AI assistant with 3D core, Canvas energy reactor, MediaPipe hand tracking, and local wake-word detection.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "JARVIS"
+rootProject.name = "JARVIS X"
 
 include(":app")

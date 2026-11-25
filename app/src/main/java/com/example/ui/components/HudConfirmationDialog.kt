@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,7 +36,7 @@ import com.example.ui.theme.JarvisCyan
 import com.example.ui.theme.JarvisRedAlert
 import com.example.ui.theme.JarvisSurface
 import com.example.ui.theme.JarvisTextPrimary
-import com.example.ui.theme.JarvisTextSecondary
+import kotlinx.coroutines.launch
 
 @Composable
 fun HudConfirmationDialog(
@@ -44,6 +45,7 @@ fun HudConfirmationDialog(
     onConfirmed: suspend () -> Unit
 ) {
     if (request == null) return
+    val scope = rememberCoroutineScope()
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -51,14 +53,13 @@ fun HudConfirmationDialog(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
                 .background(JarvisSurface)
-                .border(2.dp, JarvisRedAlert, RoundedCornerShape(16.dp))
+                .border(1.5.dp, JarvisRedAlert, RoundedCornerShape(16.dp))
                 .padding(20.dp)
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Header icon
                 Box(
                     modifier = Modifier
                         .size(48.dp)
@@ -69,7 +70,7 @@ fun HudConfirmationDialog(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Warning,
-                        contentDescription = "Alert",
+                        contentDescription = "Confirmation alert",
                         tint = JarvisRedAlert,
                         modifier = Modifier.size(28.dp)
                     )
@@ -103,7 +104,7 @@ fun HudConfirmationDialog(
                         modifier = Modifier
                             .weight(1f)
                             .testTag("dialog_abort_button"),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, JarvisCyan.copy(alpha = 0.5f)),
+                        border = BorderStroke(1.dp, JarvisCyan.copy(alpha = 0.5f)),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = JarvisCyan)
                     ) {
                         Text("ABORT", fontWeight = FontWeight.Bold)
@@ -111,7 +112,9 @@ fun HudConfirmationDialog(
 
                     Button(
                         onClick = {
-                            onDismiss()
+                            scope.launch {
+                                onConfirmed()
+                            }
                         },
                         modifier = Modifier
                             .weight(1f)

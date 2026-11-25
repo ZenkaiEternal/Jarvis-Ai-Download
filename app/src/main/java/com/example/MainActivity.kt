@@ -15,11 +15,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.ui.screens.JarvisMainScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.JarvisViewModel
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
@@ -31,7 +34,7 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode == RESULT_OK) {
             val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (!spokenText.isNullOrBlank()) {
-                viewModel.sendUserMessage(spokenText)
+                viewModel.sendUserMessage(spokenText, fromVoice = true)
             }
         }
     }
@@ -40,36 +43,40 @@ class MainActivity : ComponentActivity() {
         try {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "J.A.R.V.I.S. Listening... Transmit directive")
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "JARVIS X Listening... Speak your directive")
             }
             speechLauncher.launch(intent)
-        } catch (e: Exception) {
-            viewModel.toggleVoiceListening()
+        } catch (_: Exception) {
         }
     }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val audioGranted = permissions[Manifest.permission.RECORD_AUDIO] == true
-        if (audioGranted) {
-            viewModel.onPermissionGranted()
+        if (permissions[Manifest.permission.RECORD_AUDIO] == true) {
+            viewModel.onMicPermissionGranted()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         configureLockScreenOperation()
         enableEdgeToEdge()
 
-        // Request audio & notification permissions immediately on app launch
         requestRequiredPermissions()
 
         setContent {
+            LaunchedEffect(Unit) {
+                viewModel.systemVoiceDialogTrigger.collect {
+                    launchSystemVoiceDialog()
+                }
+            }
+
             MyApplicationTheme {
                 JarvisMainScreen(
                     viewModel = viewModel,
-                    onLaunchSystemVoiceDialog = { launchSystemVoiceDialog() },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -79,8 +86,13 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            viewModel.onPermissionGranted()
+            viewModel.onMicPermissionGranted()
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        viewModel.onAppBackgrounded()
     }
 
     private fun configureLockScreenOperation() {
@@ -93,8 +105,8 @@ class MainActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             window.addFlags(
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
             )
         }
     }
@@ -110,7 +122,7 @@ class MainActivity : ComponentActivity() {
         if (ungranted.isNotEmpty()) {
             permissionLauncher.launch(ungranted.toTypedArray())
         } else {
-            viewModel.onPermissionGranted()
+            viewModel.onMicPermissionGranted()
         }
     }
 }

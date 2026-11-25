@@ -7,6 +7,10 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.example.data.model.AuditLogEntity
+import com.example.data.model.FaceProfileEntity
+import com.example.data.model.FaceRecognitionEventEntity
+import com.example.data.model.FingertipMovementEntity
+import com.example.data.model.LogReportEntity
 import com.example.data.model.MemoryEntity
 import com.example.data.model.NoteEntity
 import com.example.data.model.ReminderEntity
@@ -85,4 +89,103 @@ interface AuditLogDao {
 
     @Query("DELETE FROM audit_logs")
     suspend fun clearLogs()
+}
+
+@Dao
+interface FingertipMovementDao {
+    @Query("SELECT * FROM fingertip_movements ORDER BY timestamp DESC LIMIT :limit")
+    fun getRecentMovements(limit: Int = 120): Flow<List<FingertipMovementEntity>>
+
+    @Query("SELECT * FROM fingertip_movements WHERE syncedToCloud = 0 ORDER BY timestamp ASC LIMIT :limit")
+    suspend fun getUnsyncedMovements(limit: Int = 100): List<FingertipMovementEntity>
+
+    @Query("SELECT COUNT(*) FROM fingertip_movements")
+    fun getCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM fingertip_movements WHERE syncedToCloud = 0")
+    fun getUnsyncedCount(): Flow<Int>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMovement(movement: FingertipMovementEntity): Long
+
+    @Query("UPDATE fingertip_movements SET syncedToCloud = 1 WHERE id IN (:ids)")
+    suspend fun markSynced(ids: List<Long>)
+
+    @Query("DELETE FROM fingertip_movements")
+    suspend fun clearAll()
+}
+
+@Dao
+interface FaceProfileDao {
+    @Query("SELECT * FROM face_profiles ORDER BY enrolledAt DESC")
+    fun getAllProfiles(): Flow<List<FaceProfileEntity>>
+
+    @Query("SELECT * FROM face_profiles ORDER BY enrolledAt DESC")
+    suspend fun getAllProfilesSnapshot(): List<FaceProfileEntity>
+
+    @Query("SELECT COUNT(*) FROM face_profiles")
+    fun getCount(): Flow<Int>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProfile(profile: FaceProfileEntity): Long
+
+    @Query("UPDATE face_profiles SET lastSeenAt = :seenAt WHERE id = :id")
+    suspend fun updateLastSeen(id: Long, seenAt: Long)
+
+    @Query("DELETE FROM face_profiles WHERE id = :id")
+    suspend fun deleteProfileById(id: Long)
+
+    @Query("DELETE FROM face_profiles")
+    suspend fun clearAll()
+}
+
+@Dao
+interface FaceRecognitionDao {
+    @Query("SELECT * FROM facial_recognition_events ORDER BY timestamp DESC LIMIT :limit")
+    fun getRecentEvents(limit: Int = 100): Flow<List<FaceRecognitionEventEntity>>
+
+    @Query("SELECT * FROM facial_recognition_events WHERE syncedToCloud = 0 ORDER BY timestamp ASC LIMIT :limit")
+    suspend fun getUnsyncedEvents(limit: Int = 100): List<FaceRecognitionEventEntity>
+
+    @Query("SELECT COUNT(*) FROM facial_recognition_events")
+    fun getCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM facial_recognition_events WHERE syncedToCloud = 0")
+    fun getUnsyncedCount(): Flow<Int>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvent(event: FaceRecognitionEventEntity): Long
+
+    @Query("UPDATE facial_recognition_events SET syncedToCloud = 1 WHERE id IN (:ids)")
+    suspend fun markSynced(ids: List<Long>)
+
+    @Query("DELETE FROM facial_recognition_events")
+    suspend fun clearAll()
+}
+
+@Dao
+interface LogReportDao {
+    @Query("SELECT * FROM log_reports ORDER BY timestamp DESC LIMIT :limit")
+    fun getRecentReports(limit: Int = 150): Flow<List<LogReportEntity>>
+
+    @Query("SELECT * FROM log_reports WHERE category = :category ORDER BY timestamp DESC LIMIT :limit")
+    fun getReportsByCategory(category: String, limit: Int = 100): Flow<List<LogReportEntity>>
+
+    @Query("SELECT * FROM log_reports WHERE syncedToCloud = 0 ORDER BY timestamp ASC LIMIT :limit")
+    suspend fun getUnsyncedReports(limit: Int = 100): List<LogReportEntity>
+
+    @Query("SELECT COUNT(*) FROM log_reports")
+    fun getCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM log_reports WHERE syncedToCloud = 0")
+    fun getUnsyncedCount(): Flow<Int>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReport(report: LogReportEntity): Long
+
+    @Query("UPDATE log_reports SET syncedToCloud = 1 WHERE id IN (:ids)")
+    suspend fun markSynced(ids: List<Long>)
+
+    @Query("DELETE FROM log_reports")
+    suspend fun clearAll()
 }

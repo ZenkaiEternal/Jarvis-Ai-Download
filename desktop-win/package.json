@@ -1,0 +1,52 @@
+{
+  "name": "jarvis-3d-gesture-control",
+  "version": "1.0.0",
+  "description": "JARVIS 3D Gesture Control Desktop Edition for Windows 11 (Three.js + MediaPipe Hands)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable nsis --x64",
+    "dist:portable": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.jarvisx.gesturecontrol.win11",
+    "productName": "JARVIS 3D Gesture Control",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "three.min.js"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "JARVIS-3D-GestureControl-Win11-x64.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "JARVIS-3D-GestureControl-Setup-Win11-x64.exe"
+    }
+  }
+}

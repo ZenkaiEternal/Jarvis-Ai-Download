@@ -128,9 +128,9 @@ class JarvisBackgroundService : Service() {
             return START_NOT_STICKY
         }
 
-        startForegroundNotification("Listening for 'Wake up' or 'Jarvis'...")
+        startForegroundNotification("Listening for 'Hey Jarvis' or 'Wake up'...")
         _isServiceRunning.value = true
-        _lastStatusText.value = "SENTINEL ACTIVE // MONITORING 'WAKE UP'"
+        _lastStatusText.value = "SENTINEL ACTIVE // MONITORING 'HEY JARVIS'"
 
         voiceEngine?.setContinuousListening(true)
 
@@ -163,7 +163,7 @@ class JarvisBackgroundService : Service() {
             voiceEngine?.speak("At your service, sir.") {
                 _lastStatusText.value = "SENTINEL ACTIVE // LISTENING"
                 updateNotification("Listening for instruction...")
-                voiceEngine?.startListeningForCommand()
+                voiceEngine?.startCommandListening()
             }
         } else {
             handleCommandFromBackground(remainder)

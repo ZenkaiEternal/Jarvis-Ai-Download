@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      touch-action: none;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+    }
+  </style>
+  <script src="three.min.js"></script>
+</head>
+<body>
+<script>
+(function () {
+  if (typeof THREE === 'undefined') {
+    return;
+  }
+
+  let seed = 133791;
+  function rand() {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  }
+
+  // 1. Scene, Fog & Filmic Studio PBR Renderer
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x030305, 0.028);
+
+  const camera = new THREE.PerspectiveCamera(42, window.innerWidth / Math.max(1, window.innerHeight), 0.1, 100);
+  camera.position.set(0, 0.05, 5.45);
+
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.24;
+  document.body.appendChild(renderer.domElement);
+
+  // 2. Procedural Studio PBR Environment (for Interstellar Endurance metallic hull)
+  const pmremGenerator = new THREE.PMREMGenerator(renderer);
+  pmremGenerator.compileEquirectangularShader();
+  const envScene = new THREE.Scene();
+  envScene.background = new THREE.Color(0x050811);
+  const envWarm = new THREE.Mesh(
+    new THREE.PlaneGeometry(14, 14),
+    new THREE.MeshBasicMaterial({ color: 0xffe4b8, side: THREE.DoubleSide })
+  );
+  envWarm.position.set(6, 5, 5);
+  envWarm.lookAt(0, 0, 0);
+  envScene.add(envWarm);
+
+  const envCool = new THREE.Mesh(
+    new THREE.PlaneGeometry(14, 14),
+    new THREE.MeshBasicMaterial({ color: 0x6cd8ff, side: THREE.DoubleSide })
+  );
+  envCool.position.set(-6, -4, 4);
+  envCool.lookAt(0, 0, 0);
+  envScene.add(envCool);
+
+  const envRT = pmremGenerator.fromScene(envScene, 0.04);
+  scene.environment = envRT.texture;
+  pmremGenerator.dispose();
+
+  // Studio Lights for PBR Spacecraft
+  const hemiLight = new THREE.HemisphereLight(0xaee6ff, 0x101420, 0.9);
+  scene.add(hemiLight);
+  const keyLight = new THREE.DirectionalLight(0xfff1dc, 2.2);
+  keyLight.position.set(4.5, 5.5, 4.8);
+  scene.add(keyLight);
+  const rimLight = new THREE.DirectionalLight(0x52c8ff, 1.25);
+  rimLight.position.set(-4.5, -2.5, -2.0);
+  scene.add(rimLight);
+
+  // 3. Procedural Textures
+  function createGlowTexture(innerHex, midHex, outerRgba) {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(128, 128, 2, 128, 128, 126);
+    g.addColorStop(0.0, innerHex);
+    g.addColorStop(0.22, midHex);
+    g.addColorStop(0.55, outerRgba);
+    g.addColorStop(1.0, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 256);
+    return new THREE.CanvasTexture(c);
+  }
+
+  function createPanelTexture() {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#c8d0dc';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.strokeStyle = '#6c7788';
+    ctx.lineWidth = 3;
+    for (let x = 0; x <= 256; x += 64) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 256);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= 256; y += 64) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(256, y);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#aeb9c8';
+    ctx.fillRect(16, 16, 32, 32);
+    ctx.fillRect(144, 80, 32, 32);
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+
+  function createContactShadowTexture() {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(128, 128, 8, 128, 128, 124);
+    g.addColorStop(0.0, 'rgba(255, 178, 56, 0.25)');
+    g.addColorStop(0.45, 'rgba(110, 180, 255, 0.11)');
+    g.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 256);
+    return new THREE.CanvasTexture(c);
+  }
+
+  const coreGlowTex = createGlowTexture('rgba(255, 252, 235, 1)', 'rgba(255, 198, 66, 0.85)', 'rgba(255, 102, 0, 0.22)');
+  const sparkTex = createGlowTexture('rgba(255, 255, 255, 1)', 'rgba(255, 214, 102, 0.85)', 'rgba(255, 120, 10, 0.0)');
+  const panelTex = createPanelTexture();
+  const shadowTex = createContactShadowTexture();
+
+  // 4. Shared Workshop State
+  const BASE_GOLD = new THREE.Color('#FFD166');
+  const BASE_AMBER = new THREE.Color('#FF8C00');
+  const BASE_EMBER = new THREE.Color('#FF4D00');
+  const BASE_WHITE_GOLD = new THREE.Color('#FFF6D6');
+
+  const state = {
+    modelMode: 'JARVIS_CORE', // 'JARVIS_CORE' | 'ENDURANCE'
+    wireframe: false,
+    targetExplode: 0.0,
+    currentExplode: 0.0,
+    soundAllowed: true,
+    targetYaw: 0,
+    targetPitch: 0,
+    targetOffsetX: 0,
+    targetOffsetY: 0,
+    targetZoom: 1.0,
+    touchYawBias: 0,
+    touchPitchBias: 0,
+    touchOffsetXBias: 0,
+    touchOffsetYBias: 0,
+    touchZoomScale: 1.0,
+    currentYaw: 0,
+    currentPitch: 0,
+    currentOffsetX: 0,
+    currentOffsetY: 0,
+    currentCameraZ: 5.45,
+    voiceState: 'IDLE',
+    amplitude: 0.1,
+    speedScale: 1.0,
+    glowIntensity: 1.0,
+    emotionTint: new THREE.Color('#FFD166'),
+    targetEmotionTint: new THREE.Color('#FFD166'),
+    activeGold: new THREE.Color('#FFD166'),
+    activeAmber: new THREE.Color('#FF8C00'),
+    wakeBurst: 0.0,
+    time: 0
+  };
+
+  // 5. Procedural Web Audio Acoustic Synthesizer ("Interstellar Endurance with sound" + JARVIS core resonance)
+  const audioSys = {
+    ctx: null,
+    masterGain: null,
+    filter: null,
+    oscs: [],
+    started: false,
+    ensureStarted: function () {
+      if (!state.soundAllowed) return;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        if (!this.ctx) {
+          this.ctx = new AC();
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.value = 0.0;
+          this.filter = this.ctx.createBiquadFilter();
+          this.filter.type = 'lowpass';
+          this.filter.frequency.value = 340;
+          this.masterGain.connect(this.ctx.destination);
+          this.filter.connect(this.masterGain);
+
+          // Warm Interstellar cathedral organ fifths / sub-bass drone
+          const freqs = [55.0, 82.41, 110.0, 164.81];
+          freqs.forEach((f, idx) => {
+            const osc = this.ctx.createOscillator();
+            osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
+            osc.frequency.value = f;
+            const g = this.ctx.createGain();
+            g.gain.value = idx === 0 ? 0.34 : 0.16;
+            osc.connect(g);
+            g.connect(this.filter);
+            osc.start();
+            this.oscs.push(osc);
+          });
+          this.started = true;
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      } catch (_e) {
+        // Safe no-op if WebAudio is restricted
+      }
+    },
+    update: function (zoomVal) {
+      if (!this.started || !this.ctx || !this.masterGain || !this.filter) return;
+      try {
+        const active = state.soundAllowed && (state.modelMode === 'ENDURANCE' || state.voiceState !== 'IDLE');
+        const targetGain = active ? (state.modelMode === 'ENDURANCE' ? 0.075 : 0.025) : 0.0;
+        const now = this.ctx.currentTime;
+        this.masterGain.gain.setTargetAtTime(targetGain, now, 0.25);
+        const cutoff = state.modelMode === 'ENDURANCE'
+          ? (240 + (zoomVal - 0.5) * 320 + state.amplitude * 220)
+          : (180 + state.amplitude * 260);
+        this.filter.frequency.setTargetAtTime(Math.max(120, Math.min(1400, cutoff)), now, 0.18);
+      } catch (_e) {
+      }
+    },
+    triggerChime: function () {
+      if (!this.started || !this.ctx || !this.masterGain || !state.soundAllowed) return;
+      try {
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(state.modelMode === 'ENDURANCE' ? 329.63 : 523.25, now);
+        osc.frequency.exponentialRampToValueAtTime(state.modelMode === 'ENDURANCE' ? 440.0 : 783.99, now + 0.35);
+        g.gain.setValueAtTime(0.05, now);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+        osc.connect(g);
+        g.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.48);
+      } catch (_e) {
+      }
+    }
+  };
+
+  // Root group moved/rotated by fingertip gestures & multi-touch
+  const jarvisRoot = new THREE.Group();
+  scene.add(jarvisRoot);
+
+  // =========================================================================
+  // MODEL 1: JARVIS NEURAL CORE (ArtStation Ryx3bE Procedural Circuit + Amber Neural Sphere)
+  // =========================================================================
+  const coreModelGroup = new THREE.Group();
+  jarvisRoot.add(coreModelGroup);
+
+  const coreSpriteMat = new THREE.SpriteMaterial({
+    map: coreGlowTex,
+    color: 0xffd97d,
+    transparent: true,
+    opacity: 0.92,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const coreSprite = new THREE.Sprite(coreSpriteMat);
+  coreSprite.scale.set(1.65, 1.65, 1);
+  coreModelGroup.add(coreSprite);
+
+  const nucleusGeo = new THREE.IcosahedronGeometry(0.28, 3);
+  const nucleusBase = Float32Array.from(nucleusGeo.attributes.position.array);
+  const nucleusMat = new THREE.MeshBasicMaterial({
+    color: 0xfff5d1,
+    transparent: true,
+    opacity: 0.92,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const nucleusMesh = new THREE.Mesh(nucleusGeo, nucleusMat);
+  coreModelGroup.add(nucleusMesh);
+
+  // Braided inner plasma loops
+  const braidGroup = new THREE.Group();
+  const braidMatPrimary = new THREE.MeshBasicMaterial({
+    color: 0xffe49e,
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const braidMatSecondary = new THREE.MeshBasicMaterial({
+    color: 0xff9e1b,
+    transparent: true,
+    opacity: 0.72,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  for (let i = 0; i < 4; i++) {
+    const pts = [];
+    const rx = 0.34 + i * 0.065;
+    const ry = 0.28 + (i % 2) * 0.09;
+    const phase = i * 1.15;
+    for (let s = 0; s < 48; s++) {
+      const a = (s / 48) * Math.PI * 2;
+      const wobble = Math.sin(a * 3 + phase) * 0.045;
+      pts.push(new THREE.Vector3(
+        Math.cos(a) * (rx + wobble),
+        Math.sin(a) * (ry + wobble * 0.7),
+        Math.sin(a * 2 + phase) * 0.14
+      ));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts, true);
+    const tubeGeo = new THREE.TubeGeometry(curve, 84, i < 2 ? 0.017 : 0.012, 8, true);
+    const mesh = new THREE.Mesh(tubeGeo, i < 2 ? braidMatPrimary : braidMatSecondary);
+    mesh.rotation.set(i * 0.52, i * 0.78, i * 0.35);
+    braidGroup.add(mesh);
+  }
+  coreModelGroup.add(braidGroup);
+
+  // Procedural Circuit Lattice (Ryx3bE inspired step-wise circuit traces on spherical shells)
+  function buildProceduralCircuitShell(traceCount, rBase) {
+    const segPos = [];
+    const segCol = [];
+    const cHot = new THREE.Color('#FFF5CC');
+    const cGold = new THREE.Color('#FFC13B');
+    const cOrange = new THREE.Color('#FF6D00');
+
+    for (let t = 0; t < traceCount; t++) {
+      let theta = rand() * Math.PI * 2;
+      let phi = 0.25 + rand() * (Math.PI - 0.5);
+      let r = rBase + (rand() - 0.5) * 0.22;
+      const steps = 4 + Math.floor(rand() * 5);
+      const col = rand() > 0.65 ? cHot : (rand() > 0.3 ? cGold : cOrange);
+
+      for (let s = 0; s < steps; s++) {
+        const x1 = r * Math.sin(phi) * Math.cos(theta);
+        const y1 = r * Math.sin(phi) * Math.sin(theta);
+        const z1 = r * Math.cos(phi);
+
+        // Orthogonal Blender Procedural-Circuit style 90-degree turns along theta / phi / r
+        const axis = s % 3;
+        if (axis === 0) {
+          theta += (rand() > 0.5 ? 1 : -1) * (0.14 + rand() * 0.22);
+        } else if (axis === 1) {
+          phi = Math.max(0.18, Math.min(Math.PI - 0.18, phi + (rand() > 0.5 ? 1 : -1) * (0.10 + rand() * 0.16)));
+        } else {
+          r += (rand() > 0.5 ? 1 : -1) * 0.08;
+        }
+
+        const x2 = r * Math.sin(phi) * Math.cos(theta);
+        const y2 = r * Math.sin(phi) * Math.sin(theta);
+        const z2 = r * Math.cos(phi);
+        segPos.push(x1, y1, z1, x2, y2, z2);
+        segCol.push(col.r, col.g, col.b, col.r, col.g, col.b);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(segPos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(segCol, 3));
+    return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.68,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    }));
+  }
+
+  function buildNeuralFilamentWeb(nodeCount, rMin, rMax, maxDist, maxLinksPerNode, opacity) {
+    const nodes = [];
+    const golden = (1 + Math.sqrt(5)) / 2;
+    for (let i = 0; i < nodeCount; i++) {
+      const theta = (2 * Math.PI * i) / golden + (rand() - 0.5) * 0.18;
+      const phi = Math.acos(1 - (2 * (i + 0.5)) / nodeCount) + (rand() - 0.5) * 0.12;
+      const r = rMin + rand() * (rMax - rMin);
+      nodes.push(new THREE.Vector3(
+        r * Math.sin(phi) * Math.cos(theta),
+        r * Math.sin(phi) * Math.sin(theta),
+        r * Math.cos(phi)
+      ));
+    }
+    const segPositions = [];
+    const segColors = [];
+    const cHot = new THREE.Color('#FFF2C2');
+    const cGold = new THREE.Color('#FFB830');
+    const cAmber = new THREE.Color('#FF6D00');
+    for (let i = 0; i < nodeCount; i++) {
+      let links = 0;
+      const a = nodes[i];
+      for (let j = i + 1; j < nodeCount && links < maxLinksPerNode; j++) {
+        const b = nodes[j];
+        if (a.distanceTo(b) < maxDist) {
+          segPositions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+          const pickA = rand() > 0.72 ? cHot : (rand() > 0.35 ? cGold : cAmber);
+          const pickB = rand() > 0.65 ? cGold : cAmber;
+          segColors.push(pickA.r, pickA.g, pickA.b, pickB.r, pickB.g, pickB.b);
+          links++;
+        }
+      }
+      if (rand() > 0.45) {
+        const dir = a.clone().normalize();
+        const inner = dir.clone().multiplyScalar(a.length() * (0.68 + rand() * 0.18));
+        segPositions.push(a.x, a.y, a.z, inner.x, inner.y, inner.z);
+        segColors.push(cGold.r, cGold.g, cGold.b, cHot.r, cHot.g, cHot.b);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(segPositions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(segColors, 3));
+    return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: opacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    }));
+  }
+
+  const circuitShell = buildProceduralCircuitShell(110, 1.18);
+  const innerWeb = buildNeuralFilamentWeb(230, 0.65, 1.02, 0.42, 4, 0.56);
+  const outerWeb = buildNeuralFilamentWeb(310, 1.18, 1.54, 0.45, 4, 0.44);
+  coreModelGroup.add(circuitShell);
+  coreModelGroup.add(innerWeb);
+  coreModelGroup.add(outerWeb);
+
+  // Sweeping concentric arcs
+  const arcGroup = new THREE.Group();
+  const arcSpecs = [
+    { r: 0.72, tube: 0.015, arc: Math.PI * 1.18, color: 0xffe08a, opacity: 0.82, rx: 0.45, ry: 0.25, rz: 0.2, speed: 0.48 },
+    { r: 0.94, tube: 0.013, arc: Math.PI * 0.95, color: 0xffb732, opacity: 0.74, rx: -0.62, ry: 0.45, rz: 0.8, speed: -0.36 },
+    { r: 1.18, tube: 0.018, arc: Math.PI * 1.32, color: 0xff9e1b, opacity: 0.66, rx: 0.85, ry: -0.38, rz: -0.5, speed: 0.28 },
+    { r: 1.36, tube: 0.011, arc: Math.PI * 0.82, color: 0xffd166, opacity: 0.62, rx: -0.32, ry: 0.95, rz: 1.1, speed: -0.44 },
+    { r: 1.50, tube: 0.014, arc: Math.PI * 1.08, color: 0xff7700, opacity: 0.52, rx: 0.28, ry: -0.52, rz: 0.35, speed: 0.22 },
+    { r: 1.62, tube: 0.009, arc: Math.PI * 0.65, color: 0xffe49e, opacity: 0.55, rx: 1.08, ry: 0.22, rz: -0.9, speed: -0.31 }
+  ];
+  const arcMeshes = [];
+  arcSpecs.forEach((s) => {
+    const mesh = new THREE.Mesh(
+      new THREE.TorusGeometry(s.r, s.tube, 8, 72, s.arc),
+      new THREE.MeshBasicMaterial({
+        color: s.color,
+        transparent: true,
+        opacity: s.opacity,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    mesh.rotation.set(s.rx, s.ry, s.rz);
+    mesh.userData.speed = s.speed;
+    arcGroup.add(mesh);
+    arcMeshes.push(mesh);
+  });
+  coreModelGroup.add(arcGroup);
+
+  // Radial caliper fins & circuit micro-plates (with radial explode support!)
+  const finCount = 84;
+  const finMat = new THREE.MeshBasicMaterial({
+    color: 0xffb32c,
+    transparent: true,
+    opacity: 0.68,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const finInstanced = new THREE.InstancedMesh(new THREE.BoxGeometry(0.012, 0.24, 0.012), finMat, finCount);
+  const finMeta = [];
+  const scratchObj = new THREE.Object3D();
+  const upVec = new THREE.Vector3(0, 1, 0);
+  const tmpDir = new THREE.Vector3();
+
+  for (let i = 0; i < finCount; i++) {
+    const angle = (i / finCount) * Math.PI * 2 + (rand() - 0.5) * 0.08;
+    const band = (i % 3) - 1;
+    const lat = band * 0.42 + (rand() - 0.5) * 0.24;
+    const dir = new THREE.Vector3(
+      Math.cos(lat) * Math.cos(angle),
+      Math.cos(lat) * Math.sin(angle),
+      Math.sin(lat)
+    ).normalize();
+    finMeta.push({ dir, baseR: 1.46 + (i % 4) * 0.06, lenScale: 0.65 + (i % 5) * 0.24 });
+  }
+  coreModelGroup.add(finInstanced);
+
+  const plateCount = 64;
+  const plateMat = new THREE.MeshBasicMaterial({
+    color: 0xffcf5c,
+    transparent: true,
+    opacity: 0.62,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const plateInstanced = new THREE.InstancedMesh(new THREE.BoxGeometry(0.068, 0.012, 0.038), plateMat, plateCount);
+  const plateMeta = [];
+  for (let i = 0; i < plateCount; i++) {
+    const theta = (2 * Math.PI * i) / ((1 + Math.sqrt(5)) / 2);
+    const phi = Math.acos(1 - (2 * (i + 0.5)) / plateCount);
+    const dir = new THREE.Vector3(
+      Math.sin(phi) * Math.cos(theta),
+      Math.sin(phi) * Math.sin(theta),
+      Math.cos(phi)
+    ).normalize();
+    plateMeta.push({ dir, radius: 1.08 + (i % 5) * 0.11, speed: 0.12 + (i % 4) * 0.05 });
+  }
+  coreModelGroup.add(plateInstanced);
+
+  // Neural spark cloud
+  const sparkCount = 1350;
+  const sparkPositions = new Float32Array(sparkCount * 3);
+  const sparkBase = new Float32Array(sparkCount * 3);
+  const sparkColors = new Float32Array(sparkCount * 3);
+  const cSparkWhite = new THREE.Color('#FFF7D6');
+  const cSparkGold = new THREE.Color('#FFC13B');
+  const cSparkOrange = new THREE.Color('#FF6D00');
+  for (let i = 0; i < sparkCount; i++) {
+    const theta = rand() * 2 * Math.PI;
+    const phi = Math.acos(2 * rand() - 1);
+    const r = rand() < 0.35 ? (0.32 + rand() * 0.48) : (1.05 + rand() * 0.62);
+    const x = r * Math.sin(phi) * Math.cos(theta);
+    const y = r * Math.sin(phi) * Math.sin(theta);
+    const z = r * Math.cos(phi);
+    sparkBase[i * 3] = x; sparkBase[i * 3 + 1] = y; sparkBase[i * 3 + 2] = z;
+    sparkPositions[i * 3] = x; sparkPositions[i * 3 + 1] = y; sparkPositions[i * 3 + 2] = z;
+    const c = r < 0.7 ? cSparkWhite : (rand() > 0.42 ? cSparkGold : cSparkOrange);
+    sparkColors[i * 3] = c.r; sparkColors[i * 3 + 1] = c.g; sparkColors[i * 3 + 2] = c.b;
+  }
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+  sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkColors, 3));
+  const sparkMat = new THREE.PointsMaterial({
+    size: 0.068,
+    map: sparkTex,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.92,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const sparkCloud = new THREE.Points(sparkGeo, sparkMat);
+  coreModelGroup.add(sparkCloud);
+
+  const outerCoronaMat = new THREE.MeshBasicMaterial({
+    color: 0xffa020,
+    transparent: true,
+    opacity: 0.14,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const outerCorona1 = new THREE.Mesh(new THREE.RingGeometry(1.74, 1.98, 72, 1, 0.35, 2.75), outerCoronaMat);
+  outerCorona1.rotation.z = 0.42;
+  coreModelGroup.add(outerCorona1);
+  const outerCorona2 = new THREE.Mesh(new THREE.RingGeometry(1.72, 1.92, 72, 1, 3.65, 2.2), outerCoronaMat);
+  outerCorona2.rotation.z = -0.35;
+  coreModelGroup.add(outerCorona2);
+
+  // =========================================================================
+  // MODEL 2: INTERSTELLAR ENDURANCE SPACECRAFT (12-Module Centrifuge + Hub + Ranger)
+  // =========================================================================
+  const enduranceGroup = new THREE.Group();
+  enduranceGroup.visible = false;
+  jarvisRoot.add(enduranceGroup);
+
+  const hullWhiteMat = new THREE.MeshStandardMaterial({
+    color: 0xe6ecf5,
+    map: panelTex,
+    roughness: 0.38,
+    metalness: 0.42
+  });
+  const hullDarkMat = new THREE.MeshStandardMaterial({
+    color: 0x354052,
+    roughness: 0.42,
+    metalness: 0.82
+  });
+  const hullTitaniumMat = new THREE.MeshStandardMaterial({
+    color: 0x9aa9be,
+    roughness: 0.28,
+    metalness: 0.88
+  });
+  const thrusterGlowMat = new THREE.MeshBasicMaterial({
+    color: 0x76e8ff,
+    transparent: true,
+    opacity: 0.92,
+    blending: THREE.AdditiveBlending
+  });
+  const windowAmberMat = new THREE.MeshBasicMaterial({
+    color: 0xffd27a
+  });
+
+  const enduranceMaterials = [hullWhiteMat, hullDarkMat, hullTitaniumMat];
+  const enduranceSpinGroup = new THREE.Group();
+  enduranceGroup.add(enduranceSpinGroup);
+
+  const enduranceModules = [];
+  const ringRadius = 1.56;
+
+  // Build 12 distinct ring modules (0,3,6,9 = Propulsion; others = Cargo/Hab/Command/Cryo/Utilities)
+  for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2;
+    const modGroup = new THREE.Group();
+    const basePos = new THREE.Vector3(Math.cos(angle) * ringRadius, Math.sin(angle) * ringRadius, 0);
+    const outDir = basePos.clone().normalize();
+    modGroup.position.copy(basePos);
+    modGroup.rotation.z = angle;
+
+    const isPropulsion = (i % 3 === 0);
+    if (isPropulsion) {
+      // Heavy engine pod with dual ion thruster nozzles
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.34, 0.36), hullDarkMat);
+      modGroup.add(body);
+      const armor = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.38, 0.38), hullWhiteMat);
+      modGroup.add(armor);
+      for (let t = -1; t <= 1; t += 2) {
+        const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.10, 0.16, 16), hullTitaniumMat);
+        bell.rotation.x = Math.PI * 0.5;
+        bell.position.set(t * 0.09, 0, -0.24);
+        modGroup.add(bell);
+        const plume = new THREE.Mesh(new THREE.RingGeometry(0.02, 0.075, 16), thrusterGlowMat);
+        plume.position.set(t * 0.09, 0, -0.325);
+        modGroup.add(plume);
+      }
+    } else {
+      // Habitation / Command / Cryo / Cargo colonization module
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.44, 0.32), hullWhiteMat);
+      modGroup.add(hull);
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.34), hullDarkMat);
+      modGroup.add(frame);
+
+      // Command module (i=1) & Habitation (i=4) illuminated viewports
+      if (i === 1 || i === 4 || i === 7) {
+        const slit = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.18, 0.04), windowAmberMat);
+        slit.position.set(-0.18, 0, 0.08);
+        modGroup.add(slit);
+      }
+    }
+
+    // Inter-module structural ring connector link
+    const nextAngle = ((i + 0.5) / 12) * Math.PI * 2;
+    const linkMid = new THREE.Vector3(
+      Math.cos(nextAngle) * ringRadius,
+      Math.sin(nextAngle) * ringRadius,
+      0
+    );
+    const truss = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.48, 12), hullTitaniumMat);
+    truss.position.copy(linkMid.clone().sub(basePos));
+    // Place connector cleanly inside ring chord via parent spin group below:
+    enduranceSpinGroup.add(modGroup);
+    enduranceModules.push({ group: modGroup, basePos, outDir });
+
+    const chord = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.46, 12), hullDarkMat);
+    chord.position.copy(linkMid);
+    chord.rotation.z = nextAngle;
+    enduranceSpinGroup.add(chord);
+  }
+
+  // Radial access spoke from Utilities module (i=10 -> angle 300 deg) to Central Hub
+  const spokeAngle = (10 / 12) * Math.PI * 2;
+  const spokeGroup = new THREE.Group();
+  const spokeMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, ringRadius - 0.32, 16), hullWhiteMat);
+  spokeMesh.position.set(
+    Math.cos(spokeAngle) * (ringRadius * 0.5),
+    Math.sin(spokeAngle) * (ringRadius * 0.5),
+    0
+  );
+  spokeMesh.rotation.z = spokeAngle + Math.PI * 0.5;
+  spokeGroup.add(spokeMesh);
+  enduranceSpinGroup.add(spokeGroup);
+
+  // Central Docking Hub + Lathe Collar
+  const hubGroup = new THREE.Group();
+  const hubLathePts = [
+    new THREE.Vector2(0.0, -0.34),
+    new THREE.Vector2(0.24, -0.34),
+    new THREE.Vector2(0.32, -0.18),
+    new THREE.Vector2(0.32, 0.18),
+    new THREE.Vector2(0.24, 0.34),
+    new THREE.Vector2(0.0, 0.34)
+  ];
+  const hubBody = new THREE.Mesh(new THREE.LatheGeometry(hubLathePts, 28), hullTitaniumMat);
+  hubBody.rotation.x = Math.PI * 0.5;
+  hubGroup.add(hubBody);
+
+  const hubCollar = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.035, 10, 32), hullDarkMat);
+  hubCollar.position.z = 0.24;
+  hubGroup.add(hubCollar);
+
+  const hubBeacon = new THREE.Mesh(new THREE.RingGeometry(0.11, 0.16, 24), thrusterGlowMat);
+  hubBeacon.position.z = 0.35;
+  hubGroup.add(hubBeacon);
+  enduranceGroup.add(hubGroup);
+
+  // Docked Ranger SSTO Spaceplane at Forward Hub Port
+  const rangerGroup = new THREE.Group();
+  const rangerFuse = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.56, 4), hullWhiteMat);
+  rangerFuse.rotation.y = Math.PI * 0.25;
+  rangerFuse.scale.set(1.25, 1.0, 0.38);
+  rangerGroup.add(rangerFuse);
+
+  const rangerCanopy = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.16, 0.08), hullDarkMat);
+  rangerCanopy.position.set(0, 0.04, 0.06);
+  rangerGroup.add(rangerCanopy);
+
+  const rangerThruster = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.04, 0.05), thrusterGlowMat);
+  rangerThruster.position.set(0, -0.28, 0.0);
+  rangerGroup.add(rangerThruster);
+
+  rangerGroup.position.set(0, 0.02, 0.56);
+  rangerGroup.rotation.x = Math.PI * 0.48;
+  enduranceGroup.add(rangerGroup);
+
+  // Starfield dust around Endurance
+  const starCount = 360;
+  const starPos = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    const r = 2.4 + rand() * 3.2;
+    const t = rand() * Math.PI * 2;
+    const p = Math.acos(2 * rand() - 1);
+    starPos[i * 3] = r * Math.sin(p) * Math.cos(t);
+    starPos[i * 3 + 1] = r * Math.sin(p) * Math.sin(t);
+    starPos[i * 3 + 2] = r * Math.cos(p);
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  const starField = new THREE.Points(starGeo, new THREE.PointsMaterial({
+    size: 0.045,
+    map: sparkTex,
+    color: 0xffe8c2,
+    transparent: true,
+    opacity: 0.72,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  }));
+  enduranceGroup.add(starField);
+
+  // Subtle Contact Shadow & Wake Shockwave
+  const contactPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.6, 3.6),
+    new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: 0.56, depthWrite: false })
+  );
+  contactPlane.rotation.x = -Math.PI * 0.5;
+  contactPlane.position.y = -2.02;
+  scene.add(contactPlane);
+
+  const waveMat = new THREE.MeshBasicMaterial({
+    color: 0xffe699,
+    transparent: true,
+    opacity: 0.0,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const wakeWave = new THREE.Mesh(new THREE.RingGeometry(1.22, 1.36, 64), waveMat);
+  jarvisRoot.add(wakeWave);
+
+  function applyWireframe(enabled) {
+    braidMatPrimary.wireframe = enabled;
+    braidMatSecondary.wireframe = enabled;
+    nucleusMat.wireframe = enabled;
+    finMat.wireframe = enabled;
+    plateMat.wireframe = enabled;
+    enduranceMaterials.forEach((m) => { m.wireframe = enabled; });
+    arcMeshes.forEach((m) => { m.material.wireframe = enabled; });
+  }
+
+  // 6. Multi-Touch Interaction (Drag Move/Rotate + 2-Finger Pinch Zoom + Tap + Double-Tap Reset)
+  const activePointers = new Map();
+  let totalPointerMove = 0;
+  let prevPinchDist = null;
+  let hadMultiTouch = false;
+  let lastTapTime = 0;
+  let singleTapTimer = null;
+
+  function distanceBetweenPointers() {
+    const pts = Array.from(activePointers.values());
+    if (pts.length < 2) return null;
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+
+  window.addEventListener('pointerdown', (e) => {
+    audioSys.ensureStarted();
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointers.size === 1) {
+      totalPointerMove = 0;
+      prevPinchDist = null;
+      hadMultiTouch = false;
+    } else if (activePointers.size >= 2) {
+      hadMultiTouch = true;
+      if (singleTapTimer) {
+        clearTimeout(singleTapTimer);
+        singleTapTimer = null;
+      }
+      prevPinchDist = distanceBetweenPointers();
+    }
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    const prev = activePointers.get(e.pointerId);
+    if (!prev) return;
+    const dx = e.clientX - prev.x;
+    const dy = e.clientY - prev.y;
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointers.size >= 2) {
+      hadMultiTouch = true;
+      const dist = distanceBetweenPointers();
+      if (dist !== null && prevPinchDist !== null && prevPinchDist > 5) {
+        const ratio = dist / prevPinchDist;
+        state.touchZoomScale = Math.max(0.55, Math.min(2.15, state.touchZoomScale * ratio));
+      }
+      prevPinchDist = dist;
+      totalPointerMove += 20;
+    } else if (activePointers.size === 1 && !hadMultiTouch) {
+      totalPointerMove += Math.hypot(dx, dy);
+      state.touchYawBias = Math.max(-1.45, Math.min(1.45, state.touchYawBias + dx * 0.008));
+      state.touchPitchBias = Math.max(-0.95, Math.min(0.95, state.touchPitchBias + dy * 0.008));
+      state.touchOffsetXBias = Math.max(-1.1, Math.min(1.1, state.touchOffsetXBias + dx * 0.0032));
+      state.touchOffsetYBias = Math.max(-0.85, Math.min(0.85, state.touchOffsetYBias - dy * 0.0032));
+    }
+  });
+
+  function handlePointerEnd(e) {
+    const wasSingle = activePointers.size === 1 && !hadMultiTouch;
+    activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) prevPinchDist = null;
+    if (activePointers.size === 0) hadMultiTouch = false;
+    if (wasSingle && totalPointerMove < 10) {
+      const now = performance.now();
+      if (now - lastTapTime < 280) {
+        if (singleTapTimer) {
+          clearTimeout(singleTapTimer);
+          singleTapTimer = null;
+        }
+        state.touchYawBias = 0;
+        state.touchPitchBias = 0;
+        state.touchOffsetXBias = 0;
+        state.touchOffsetYBias = 0;
+        state.touchZoomScale = 1.0;
+        state.targetOffsetX = 0;
+        state.targetOffsetY = 0;
+        state.targetYaw = 0;
+        state.targetPitch = 0;
+        state.targetZoom = 1.0;
+        state.wakeBurst = 1.0;
+        audioSys.triggerChime();
+        if (window.AndroidBridge && window.AndroidBridge.onPoseReset) {
+          window.AndroidBridge.onPoseReset();
+        }
+        lastTapTime = 0;
+      } else {
+        lastTapTime = now;
+        if (singleTapTimer) clearTimeout(singleTapTimer);
+        singleTapTimer = setTimeout(() => {
+          singleTapTimer = null;
+          if (window.AndroidBridge && window.AndroidBridge.onReactorTapped) {
+            window.AndroidBridge.onReactorTapped();
+          }
+        }, 280);
+      }
+    }
+  }
+
+  window.addEventListener('pointerup', handlePointerEnd);
+  window.addEventListener('pointercancel', handlePointerEnd);
+
+  window.addEventListener('resize', () => {
+    const w = window.innerWidth;
+    const h = Math.max(1, window.innerHeight);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  });
+
+  // 7. Public Android Bridge API
+  window.jarvis3d = {
+    setPose: function (yawDeg, pitchDeg, offsetX, offsetY, zoomScale) {
+      state.targetYaw = (Number(yawDeg) || 0) * Math.PI / 180.0;
+      state.targetPitch = (Number(pitchDeg) || 0) * Math.PI / 180.0;
+      state.targetOffsetX = Math.max(-1.4, Math.min(1.4, Number(offsetX) || 0));
+      state.targetOffsetY = Math.max(-1.1, Math.min(1.1, Number(offsetY) || 0));
+      state.targetZoom = Math.max(0.55, Math.min(2.15, Number(zoomScale) || 1.0));
+    },
+    resetTouchOffsets: function () {
+      state.touchYawBias = 0;
+      state.touchPitchBias = 0;
+      state.touchOffsetXBias = 0;
+      state.touchOffsetYBias = 0;
+      state.touchZoomScale = 1.0;
+    },
+    setState: function (voiceState, amplitude, primaryHex, accentHex, speedScale, glowIntensity) {
+      state.voiceState = voiceState || 'IDLE';
+      state.amplitude = Math.max(0.05, Math.min(1.0, Number(amplitude) || 0.1));
+      if (primaryHex) state.targetEmotionTint.set(primaryHex);
+      state.speedScale = Math.max(0.5, Math.min(2.5, Number(speedScale) || 1.0));
+      state.glowIntensity = Math.max(0.5, Math.min(1.6, Number(glowIntensity) || 1.0));
+    },
+    setWorkshopOptions: function (modelMode, wireframe, explodeFactor, soundAllowed) {
+      const nextMode = (modelMode === 'ENDURANCE') ? 'ENDURANCE' : 'JARVIS_CORE';
+      const modeChanged = nextMode !== state.modelMode;
+      state.modelMode = nextMode;
+      coreModelGroup.visible = (nextMode === 'JARVIS_CORE');
+      enduranceGroup.visible = (nextMode === 'ENDURANCE');
+
+      const wf = Boolean(wireframe);
+      if (wf !== state.wireframe) {
+        state.wireframe = wf;
+        applyWireframe(wf);
+      }
+
+      state.targetExplode = Math.max(0.0, Math.min(1.0, Number(explodeFactor) || 0.0));
+      state.soundAllowed = Boolean(soundAllowed);
+      if (modeChanged) {
+        state.wakeBurst = 0.9;
+        audioSys.triggerChime();
+      }
+    },
+    triggerWakeBurst: function () {
+      state.wakeBurst = 1.0;
+      audioSys.triggerChime();
+    }
+  };
+
+  let lastTs = performance.now();
+  function animate(now) {
+    requestAnimationFrame(animate);
+    const dt = Math.min(0.05, Math.max(0.001, (now - lastTs) / 1000.0));
+    lastTs = now;
+    state.time += dt * state.speedScale;
+
+    const damp = 1.0 - Math.exp(-9.0 * dt);
+    const colorDamp = 1.0 - Math.exp(-5.0 * dt);
+    state.currentExplode += (state.targetExplode - state.currentExplode) * damp;
+
+    state.emotionTint.lerp(state.targetEmotionTint, colorDamp);
+    const isThinking = state.voiceState === 'THINKING';
+    const isListening = state.voiceState === 'LISTENING';
+    const isSpeaking = state.voiceState === 'SPEAKING';
+
+    const combinedYaw = state.targetYaw + state.touchYawBias;
+    const combinedPitch = state.targetPitch + state.touchPitchBias;
+    const combinedOffsetX = state.targetOffsetX + state.touchOffsetXBias;
+    const combinedOffsetY = state.targetOffsetY + state.touchOffsetYBias;
+    const combinedZoom = Math.max(0.55, Math.min(2.15, state.targetZoom * state.touchZoomScale));
+
+    state.currentYaw += (combinedYaw - state.currentYaw) * damp;
+    state.currentPitch += (combinedPitch - state.currentPitch) * damp;
+    state.currentOffsetX += (combinedOffsetX - state.currentOffsetX) * damp;
+    state.currentOffsetY += (combinedOffsetY - state.currentOffsetY) * damp;
+
+    const desiredCamZ = 5.45 / combinedZoom;
+    state.currentCameraZ += (desiredCamZ - state.currentCameraZ) * damp;
+    camera.position.z = state.currentCameraZ;
+
+    audioSys.update(combinedZoom);
+
+    const idleFloatY = Math.sin(state.time * 1.1) * 0.05;
+    jarvisRoot.position.x = state.currentOffsetX;
+    jarvisRoot.position.y = state.currentOffsetY + idleFloatY;
+    jarvisRoot.rotation.y = state.currentYaw + Math.sin(state.time * 0.28) * 0.08;
+    jarvisRoot.rotation.x = state.currentPitch + Math.cos(state.time * 0.36) * 0.04;
+
+    contactPlane.position.x = state.currentOffsetX * 0.9;
+    contactPlane.position.y = -2.02 + state.currentOffsetY * 0.3;
+    contactPlane.scale.setScalar(Math.max(0.5, 0.85 + combinedZoom * 0.22 - idleFloatY * 0.35));
+
+    const spinRate = isThinking ? 2.05 : isSpeaking ? 1.30 : isListening ? 1.10 : 0.52;
+    const ampBoost = isSpeaking ? state.amplitude * 0.32 : isListening ? state.amplitude * 0.22 : isThinking ? 0.14 : 0.045;
+    const ex = state.currentExplode;
+
+    if (state.modelMode === 'JARVIS_CORE') {
+      const tintMix = (isThinking || isListening) ? 0.24 : 0.10;
+      state.activeGold.copy(BASE_GOLD).lerp(state.emotionTint, tintMix);
+      state.activeAmber.copy(BASE_AMBER).lerp(state.emotionTint, tintMix * 0.65);
+
+      coreSpriteMat.color.copy(state.activeGold);
+      braidMatPrimary.color.copy(BASE_WHITE_GOLD).lerp(state.activeGold, 0.35);
+      braidMatSecondary.color.copy(state.activeAmber);
+      finMat.color.copy(state.activeAmber);
+      plateMat.color.copy(state.activeGold);
+      outerCoronaMat.color.copy(BASE_EMBER).lerp(state.activeAmber, 0.5);
+
+      braidGroup.rotation.y += dt * 0.85 * spinRate;
+      braidGroup.rotation.x += dt * 0.48 * spinRate;
+      circuitShell.rotation.y += dt * 0.24 * spinRate;
+      circuitShell.rotation.z -= dt * 0.12 * spinRate;
+      circuitShell.scale.setScalar(1.0 + ex * 0.28);
+      innerWeb.rotation.y -= dt * 0.34 * spinRate;
+      innerWeb.rotation.z += dt * 0.18 * spinRate;
+      outerWeb.rotation.y += dt * 0.22 * spinRate;
+      outerWeb.rotation.x -= dt * 0.11 * spinRate;
+      outerWeb.scale.setScalar(1.0 + ex * 0.35);
+      sparkCloud.rotation.y += dt * 0.26 * spinRate;
+      outerCorona1.rotation.z += dt * 0.14 * spinRate;
+      outerCorona2.rotation.z -= dt * 0.18 * spinRate;
+
+      for (let i = 0; i < arcMeshes.length; i++) {
+        const m = arcMeshes[i];
+        m.rotation.z += dt * m.userData.speed * spinRate;
+        m.rotation.y += dt * m.userData.speed * 0.35 * spinRate;
+        m.scale.setScalar(1.0 + ex * (0.18 + i * 0.05));
+      }
+
+      const spriteScale = 1.55 + ampBoost * 1.25 + Math.sin(state.time * 3.4) * 0.08;
+      coreSprite.scale.set(spriteScale, spriteScale, 1);
+      coreSpriteMat.opacity = Math.min(1.0, (0.78 + ampBoost * 0.65) * state.glowIntensity);
+
+      const nAttr = nucleusGeo.attributes.position;
+      const nArr = nAttr.array;
+      const tCore = state.time * (isSpeaking ? 8.0 : isThinking ? 6.5 : 3.0);
+      for (let i = 0; i < nArr.length; i += 3) {
+        const bx = nucleusBase[i];
+        const by = nucleusBase[i + 1];
+        const bz = nucleusBase[i + 2];
+        const ripple = Math.sin(bx * 6.0 + tCore) * Math.cos(by * 6.0 - tCore * 0.8) * Math.sin(bz * 5.0);
+        const s = 1.0 + ampBoost * 0.8 + ripple * ampBoost * 0.7;
+        nArr[i] = bx * s; nArr[i + 1] = by * s; nArr[i + 2] = bz * s;
+      }
+      nAttr.needsUpdate = true;
+
+      const finPulse = 1.0 + ampBoost * 0.42 + ex * 0.45;
+      for (let i = 0; i < finCount; i++) {
+        const f = finMeta[i];
+        const wave = Math.sin(state.time * 2.4 + i * 0.45) * 0.035;
+        const dist = f.baseR * finPulse + wave;
+        tmpDir.copy(f.dir).multiplyScalar(dist);
+        scratchObj.position.copy(tmpDir);
+        scratchObj.quaternion.setFromUnitVectors(upVec, f.dir);
+        scratchObj.scale.set(1.0, f.lenScale * (1.0 + ampBoost * 0.9), 1.0);
+        scratchObj.updateMatrix();
+        finInstanced.setMatrixAt(i, scratchObj.matrix);
+      }
+      finInstanced.instanceMatrix.needsUpdate = true;
+
+      for (let i = 0; i < plateCount; i++) {
+        const p = plateMeta[i];
+        const r = p.radius * (1.0 + ampBoost * 0.14 + ex * 0.42);
+        tmpDir.copy(p.dir).multiplyScalar(r);
+        scratchObj.position.copy(tmpDir);
+        scratchObj.quaternion.setFromUnitVectors(upVec, p.dir);
+        scratchObj.rotateY(state.time * p.speed);
+        scratchObj.scale.setScalar(0.85 + ampBoost * 0.45);
+        scratchObj.updateMatrix();
+        plateInstanced.setMatrixAt(i, scratchObj.matrix);
+      }
+      plateInstanced.instanceMatrix.needsUpdate = true;
+
+      const sAttr = sparkGeo.attributes.position;
+      const sArr = sAttr.array;
+      const breathe = 1.0 + ampBoost * 0.16 + ex * 0.35;
+      for (let i = 0; i < sparkCount; i++) {
+        const i3 = i * 3;
+        const shimmer = 1.0 + Math.sin(state.time * 2.1 + i * 0.17) * (0.02 + ampBoost * 0.08);
+        sArr[i3] = sparkBase[i3] * breathe * shimmer;
+        sArr[i3 + 1] = sparkBase[i3 + 1] * breathe * shimmer;
+        sArr[i3 + 2] = sparkBase[i3 + 2] * breathe * shimmer;
+      }
+      sAttr.needsUpdate = true;
+    } else {
+      // Interstellar Endurance 5.6 RPM Centrifuge Spin + Exploded Inspection + Audio Thruster Glow
+      enduranceSpinGroup.rotation.z -= dt * 0.58 * spinRate;
+      enduranceGroup.rotation.y = Math.sin(state.time * 0.3) * 0.25;
+      enduranceGroup.rotation.x = 0.32 + Math.cos(state.time * 0.25) * 0.08;
+
+      for (let i = 0; i < enduranceModules.length; i++) {
+        const m = enduranceModules[i];
+        m.group.position.copy(m.basePos).addScaledVector(m.outDir, ex * 0.65);
+      }
+      rangerGroup.position.z = 0.56 + ex * 0.72;
+      hubGroup.position.z = -ex * 0.25;
+      thrusterGlowMat.opacity = Math.min(1.0, 0.72 + ampBoost * 0.8 + Math.sin(state.time * 9.0) * 0.12);
+      starField.rotation.y += dt * 0.05;
+    }
+
+    if (state.wakeBurst > 0.01) {
+      const prog = 1.0 - state.wakeBurst;
+      wakeWave.scale.setScalar(1.0 + prog * 2.5);
+      waveMat.opacity = state.wakeBurst * 0.85;
+      state.wakeBurst *= Math.exp(-5.2 * dt);
+    } else {
+      waveMat.opacity = 0.0;
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>

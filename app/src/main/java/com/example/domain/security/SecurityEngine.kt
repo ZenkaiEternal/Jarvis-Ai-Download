@@ -31,10 +31,20 @@ class SecurityEngine(private val repository: JarvisRepository) {
         return ValidationResult(true, "Input validated.")
     }
 
-    suspend fun auditAction(action: String, details: String, isApproved: Boolean) {
+    fun maskSecrets(text: String, secretCode: String? = null): String {
+        var masked = text
+            .replace(Regex("(?i)(code\\s*(is|:)?\\s*)([a-z0-9\\-]{3,})"), "$1[REDACTED]")
+            .replace(Regex("(?i)(AIza[0-9A-Za-z\\-_]{20,})"), "[API_KEY_REDACTED]")
+        if (!secretCode.isNullOrBlank() && secretCode.length >= 3) {
+            masked = masked.replace(secretCode, "[SECRET_REDACTED]", ignoreCase = true)
+        }
+        return masked
+    }
+
+    suspend fun auditAction(action: String, details: String, isApproved: Boolean, secretToMask: String? = null) {
         repository.logAction(
             action = action,
-            details = details,
+            details = maskSecrets(details, secretToMask),
             status = if (isApproved) "APPROVED_AND_EXECUTED" else "ABORTED_OR_DENIED"
         )
     }
